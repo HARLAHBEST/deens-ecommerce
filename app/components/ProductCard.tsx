@@ -10,12 +10,10 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
   return (
     <article className="group overflow-hidden rounded-3xl border border-white/10 bg-slate-950/75 shadow-soft transition hover:-translate-y-1 hover:border-brand-500/40 hover:shadow-xl">
       <div className="relative h-72 overflow-hidden bg-slate-900">
-        <Image
-          src={product.image}
+        <img
+          src={product.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80'}
           alt={product.name}
-          fill
-          sizes="(max-width: 768px) 100vw, 33vw"
-          className="object-cover transition duration-500 group-hover:scale-105"
+          className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
         />
         {product.badge ? (
           <span className="absolute left-4 top-4 rounded-full bg-brand-600/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white shadow-soft">

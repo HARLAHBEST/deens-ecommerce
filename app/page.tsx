@@ -1,153 +1,174 @@
 "use client";
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { products } from '@/data/products';
-import { ProductCard } from './components/ProductCard';
 import { CartDrawer } from './components/CartDrawer';
-import type { CartItem } from './components/CartDrawer';
-
-const categories = ['All', 'Audio', 'Wearables', 'Computers', 'Travel'];
+import { ProductCard } from './components/ProductCard';
+import { RegisterModal } from './components/RegisterModal';
+import { useProduct } from './providers/ProductProvider';
+import { useCart } from './providers/CartProvider';
+import { useAuth } from './providers/AuthProvider';
+import type { Product } from '@/data/products';
 
 export default function HomePage() {
+  const { products, categories } = useProduct();
+  const { items: cartItems, totalItems, addToCart, updateQuantity, removeItem } = useCart();
+  const { user, logout } = useAuth();
+
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [searchTerm, setSearchTerm] = useState('');
   const [cartOpen, setCartOpen] = useState(false);
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+
+  // Registration Modal State
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
+  const [pendingProduct, setPendingProduct] = useState<Product | null>(null);
 
   const filteredProducts = useMemo(() => {
-    if (selectedCategory === 'All') return products;
-    return products.filter((product) => product.category === selectedCategory);
-  }, [selectedCategory]);
+    return products
+      .filter((product) => selectedCategory === 'All' || product.category === selectedCategory)
+      .filter((product) =>
+        [product.name, product.category, product.description, product.badge ?? '']
+          .join(' ')
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase())
+      );
+  }, [products, selectedCategory, searchTerm]);
 
-  const addToCart = (id: number) => {
-    setCartItems((prev) => {
-      const existing = prev.find((item) => item.product.id === id);
-      if (existing) {
-        return prev.map((item) => (item.product.id === id ? { ...item, quantity: item.quantity + 1 } : item));
-      }
-      const product = products.find((item) => item.id === id);
-      if (!product) return prev;
-      return [...prev, { product, quantity: 1 }];
-    });
+  const handleAddToCart = (id: number) => {
+    const product = products.find((item) => item.id === id);
+    if (!product) return;
+
+    if (!user) {
+      // Prompt customer to register when adding to cart
+      setPendingProduct(product);
+      setRegisterModalOpen(true);
+      return;
+    }
+
+    addToCart(product);
     setCartOpen(true);
   };
 
-  const updateQuantity = (productId: number, quantity: number) => {
-    setCartItems((prev) =>
-      prev
-        .map((item) => (item.product.id === productId ? { ...item, quantity } : item))
-        .filter((item) => item.quantity > 0)
-    );
+  const handleRegisterSuccess = () => {
+    if (pendingProduct) {
+      addToCart(pendingProduct);
+      setPendingProduct(null);
+    }
+    setRegisterModalOpen(false);
+    setCartOpen(true);
   };
-
-  const removeItem = (productId: number) => {
-    setCartItems((prev) => prev.filter((item) => item.product.id !== productId));
-  };
-
-  const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(227,29,72,0.22),_transparent_32%)] px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-7xl gap-8">
-        <header className="flex flex-col gap-4 rounded-[2.5rem] border border-white/10 bg-slate-900/75 px-6 py-5 shadow-soft backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-brand-500">DeensDaily Hub</p>
-            <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">A premium online shopping destination for modern essentials.</h1>
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(227,29,72,0.18),_transparent_40%)] px-4 py-6 text-slate-100 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        {/* Sleek Top Navigation Bar */}
+        <header className="sticky top-4 z-40 flex flex-col sm:flex-row items-center justify-between gap-4 rounded-3xl border border-white/10 bg-slate-900/90 p-4 sm:px-6 shadow-2xl backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-600 text-white font-black text-xl shadow-lg shadow-brand-600/30">
+              D
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-white">Deen's Daily Hub</h1>
+              <p className="text-[11px] text-brand-400 font-semibold uppercase tracking-wider">Premium E-Commerce</p>
+            </div>
           </div>
+
+          {/* Search Input */}
+          <div className="w-full sm:w-80">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search products, category..."
+              className="w-full rounded-full border border-white/10 bg-slate-950/80 px-4 py-2 text-sm text-slate-200 placeholder-slate-400 outline-none focus:border-brand-500 transition"
+            />
+          </div>
+
+          {/* Actions */}
           <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm">Free shipping over $150</span>
+            {user ? (
+              <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200">
+                <span className="font-semibold">👋 {user.name.split(' ')[0]}</span>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="text-slate-400 hover:text-white transition ml-1"
+                  title="Logout"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingProduct(null);
+                  setRegisterModalOpen(true);
+                }}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/15 transition"
+              >
+                Register / Sign in
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setCartOpen(true)}
-              className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+              className="flex items-center gap-2 rounded-full bg-brand-600 px-4 py-2 text-xs font-bold text-white hover:bg-brand-700 transition shadow-lg shadow-brand-600/30"
             >
-              Cart ({totalItems})
+              <span>🛒 Cart</span>
+              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px]">{totalItems}</span>
             </button>
           </div>
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
-          <div className="rounded-[2rem] border border-white/10 bg-slate-900/70 p-8 shadow-soft">
-            <p className="mb-4 text-sm uppercase tracking-[0.3em] text-brand-500">Featured collection</p>
-            <h2 className="mb-6 text-4xl font-semibold sm:text-5xl">Luxury products designed for everyday performance.</h2>
-            <p className="mb-8 max-w-2xl text-lg leading-8 text-slate-300">
-              Shop smartly curated electronics, accessories, and travel essentials with fast delivery and premium support.
-            </p>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <a
-                href="#products"
-                className="inline-flex rounded-full bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700"
-              >
-                Shop products
-              </a>
-              <a
-                href="#features"
-                className="inline-flex rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
-              >
-                Explore benefits
-              </a>
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border border-white/10 bg-slate-900/75 p-6 shadow-soft">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-xl font-semibold text-white">Why choose DeensDaily</h3>
-              <span className="text-sm text-slate-400">Built for modern brands</span>
-            </div>
-            <ul className="space-y-4 text-sm text-slate-300">
-              <li className="flex gap-3">
-                <span className="text-brand-400">•</span> Secure checkout with trusted payment options.
-              </li>
-              <li className="flex gap-3">
-                <span className="text-brand-400">•</span> Fast dispatch and premium customer support.
-              </li>
-              <li className="flex gap-3">
-                <span className="text-brand-400">•</span> Hassle-free returns and curated loyalty rewards.
-              </li>
-            </ul>
-          </div>
-        </section>
-
-        <section id="features" className="grid gap-4 sm:grid-cols-3">
-          {['Fast Delivery', 'Trusted Quality', 'Easy Returns'].map((feature) => (
-            <div key={feature} className="rounded-[2rem] border border-white/10 bg-slate-900/65 p-5">
-              <h3 className="text-lg font-semibold text-white">{feature}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-400">A refined shopping journey built for convenience and confidence.</p>
-            </div>
+        {/* Clean Category Filter Pills */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          {categories.map((category) => (
+            <button
+              key={category}
+              type="button"
+              onClick={() => setSelectedCategory(category)}
+              className={`rounded-full px-5 py-2 text-xs font-semibold whitespace-nowrap transition ${
+                selectedCategory === category
+                  ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/30'
+                  : 'border border-white/10 bg-slate-900/60 text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              {category}
+            </button>
           ))}
-        </section>
+        </div>
 
-        <section id="products" className="rounded-[2rem] border border-white/10 bg-slate-900/70 p-6 shadow-soft">
-          <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.3em] text-brand-500">Featured products</p>
-              <h3 className="mt-2 text-3xl font-semibold text-white">Curated for style and performance</h3>
+        {/* Straightforward Products Section */}
+        <section>
+          {filteredProducts.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/50 p-12 text-center text-slate-400">
+              No products found matching your search. Try adjusting filters or search query.
             </div>
-            <div className="flex flex-wrap gap-2">
-              {categories.map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  onClick={() => setSelectedCategory(category)}
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                    selectedCategory === category
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-950/70 text-slate-300 hover:bg-white/10'
-                  }`}
-                >
-                  {category}
-                </button>
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredProducts.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onAddToCart={() => handleAddToCart(product.id)}
+                />
               ))}
             </div>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-            {filteredProducts.map((product) => (
-              <ProductCard key={product.id} product={product} onAddToCart={addToCart} />
-            ))}
-          </div>
+          )}
         </section>
       </div>
 
+      {/* Quick Registration Modal */}
+      <RegisterModal
+        isOpen={registerModalOpen}
+        pendingProduct={pendingProduct}
+        onClose={() => setRegisterModalOpen(false)}
+        onSuccess={handleRegisterSuccess}
+      />
+
+      {/* Cart Drawer */}
       <CartDrawer
         open={cartOpen}
         items={cartItems}

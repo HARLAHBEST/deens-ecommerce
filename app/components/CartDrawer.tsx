@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Product } from '@/data/products';
 
 type CartItem = {
@@ -101,13 +102,22 @@ export function CartDrawer({ open, items, onClose, onQuantityChange, onRemove }:
               <span>${total.toFixed(2)}</span>
             </div>
           </div>
-          <button
-            type="button"
-            className="mt-5 w-full rounded-3xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-800"
-            disabled={items.length === 0}
-          >
-            Proceed to checkout
-          </button>
+          {items.length === 0 ? (
+            <button
+              type="button"
+              className="mt-5 w-full rounded-3xl bg-slate-800 px-5 py-3 text-sm font-semibold text-slate-400"
+              disabled
+            >
+              Add items to checkout
+            </button>
+          ) : (
+            <Link
+              href="/checkout"
+              className="mt-5 inline-flex w-full justify-center rounded-3xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-700"
+            >
+              Proceed to checkout
+            </Link>
+          )}
         </div>
       </div>
     </aside>
