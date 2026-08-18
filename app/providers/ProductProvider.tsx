@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { products as initialProducts, type Product } from '@/data/products';
+import { type Product } from '@/data/products';
 
 type ProductProviderValue = {
   products: Product[];
@@ -9,6 +9,7 @@ type ProductProviderValue = {
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   updateProduct: (product: Product) => Promise<void>;
   deleteProduct: (id: number) => Promise<void>;
+  clearAllProducts: () => Promise<void>;
 };
 
 const ProductContext = createContext<ProductProviderValue | undefined>(undefined);
@@ -25,11 +26,11 @@ export function ProductProvider({ children }: { children: ReactNode }) {
       if (data.success && Array.isArray(data.products)) {
         setProducts(data.products);
       } else {
-        setProducts(initialProducts);
+        setProducts([]);
       }
     } catch (err) {
       console.error('Failed to load products from MongoDB API:', err);
-      setProducts(initialProducts);
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -92,8 +93,24 @@ export function ProductProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const clearAllProducts = async () => {
+    try {
+      const res = await fetch('/api/products', {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setProducts([]);
+      }
+    } catch (err) {
+      console.error('Failed to clear products from MongoDB:', err);
+    }
+  };
+
   return (
-    <ProductContext.Provider value={{ products, categories, addProduct, updateProduct, deleteProduct }}>
+    <ProductContext.Provider
+      value={{ products, categories, addProduct, updateProduct, deleteProduct, clearAllProducts }}
+    >
       {children}
     </ProductContext.Provider>
   );

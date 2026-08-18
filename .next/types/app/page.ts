@@ -1,4 +1,4 @@
-// File: C:\Users\user\Desktop\deen-ecommerce\deensdaily-hub\app\page.tsx
+// File: c:\Users\user\Desktop\deen-ecommerce\deensdaily-hub\app\page.tsx
 import * as entry from '../../../app/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

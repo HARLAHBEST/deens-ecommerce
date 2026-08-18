@@ -3,12 +3,14 @@ import { dbConnect } from '@/lib/db';
 import { ProductModel } from '@/lib/models/Product';
 import { products as initialProducts } from '@/data/products';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     await dbConnect();
     let productsList = await ProductModel.find({}).sort({ id: 1 }).lean();
 
-    // Auto-seed initial products if database is empty
+    // Auto-seed initial products if database has no products yet
     if (productsList.length === 0) {
       await ProductModel.insertMany(initialProducts);
       productsList = await ProductModel.find({}).sort({ id: 1 }).lean();
@@ -16,8 +18,9 @@ export async function GET() {
 
     return NextResponse.json({ success: true, products: productsList });
   } catch (error: any) {
-    console.error('Fetch products error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    console.error('Fetch products database notice:', error?.message || error);
+    // Return fallback initial products if database connection fails during static export
+    return NextResponse.json({ success: true, products: initialProducts });
   }
 }
 
@@ -43,6 +46,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, product: newProduct }, { status: 201 });
   } catch (error: any) {
     console.error('Create product error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    await dbConnect();
+    await ProductModel.deleteMany({});
+    return NextResponse.json({ success: true, message: 'All products deleted from database' });
+  } catch (error: any) {
+    console.error('Clear products error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

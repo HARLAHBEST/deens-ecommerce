@@ -19,6 +19,7 @@ export const products: Product[] = [
     image:
       'https://images.unsplash.com/photo-1516707570261-664f2c65000f?auto=format&fit=crop&w=900&q=80',
     description: 'Immersive sound with noise cancellation and a luxurious fit.',
+    badge: 'Popular',
   },
   {
     id: 2,
@@ -78,7 +79,7 @@ export const products: Product[] = [
     category: 'Computers',
     rating: 4.8,
     image:
-      'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=900&q=80',
+      'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=900&q=80',
     description: 'Crystal-clear display with sharp colors and fast refresh.',
   },
   {

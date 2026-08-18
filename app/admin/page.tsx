@@ -8,13 +8,20 @@ import { ProductForm } from '../components/ProductForm';
 import type { Product } from '@/data/products';
 
 export default function AdminPage() {
-  const { products, addProduct, updateProduct, deleteProduct } = useProduct();
+  const { products, addProduct, updateProduct, deleteProduct, clearAllProducts } = useProduct();
   const { users } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'customers' | 'products'>('customers');
   const [selectedProduct, setSelectedProduct] = useState<Product | undefined>(undefined);
   const [productFilter, setProductFilter] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
+
+  const handleClearAllProducts = async () => {
+    if (confirm('Are you sure you want to delete ALL products and images from the database? This will clear the catalog for deployment.')) {
+      await clearAllProducts();
+      setSelectedProduct(undefined);
+    }
+  };
 
   const visibleProducts = useMemo(() => {
     return products.filter((product) =>
@@ -240,15 +247,26 @@ export default function AdminPage() {
         {activeTab === 'products' && (
           <section className="grid gap-8 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-900/80 p-4">
                 <h2 className="text-xl font-bold text-white">Store Items ({visibleProducts.length})</h2>
-                <button
-                  type="button"
-                  onClick={() => setSelectedProduct(undefined)}
-                  className="rounded-full bg-brand-600 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-700 transition"
-                >
-                  + Add New Product
-                </button>
+                <div className="flex items-center gap-2">
+                  {products.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllProducts}
+                      className="rounded-full border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 transition"
+                    >
+                      🗑️ Delete All Images & Items
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProduct(undefined)}
+                    className="rounded-full bg-brand-600 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-700 transition"
+                  >
+                    + Add New Product
+                  </button>
+                </div>
               </div>
 
               <div className="grid gap-4">
