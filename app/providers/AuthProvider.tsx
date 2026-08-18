@@ -34,67 +34,94 @@ type AuthProviderValue = {
 const AuthContext = createContext<AuthProviderValue | undefined>(undefined);
 const ACTIVE_USER_SESSION_KEY = 'deensdaily-active-user';
 
+function buildOptimisticUser(
+  payload: Omit<UserAccount, 'id' | 'createdAt'>,
+  registeredItems?: RegisteredItem[]
+): UserAccount {
+  return {
+    id: Math.floor(Math.random() * 90000) + 10000,
+    name: payload.name,
+    email: payload.email.toLowerCase(),
+    phone: payload.phone || '',
+    password: payload.password,
+    createdAt: new Date().toISOString(),
+    registeredItems: registeredItems || [],
+  };
+}
+
+function saveSession(user: UserAccount) {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(ACTIVE_USER_SESSION_KEY, JSON.stringify(user));
+    }
+  } catch {}
+}
+
+function clearSession() {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(ACTIVE_USER_SESSION_KEY);
+    }
+  } catch {}
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<UserAccount[]>([]);
-  const [user, setUser] = useState<UserAccount | null>(null);
-
-  // Fetch all registered users from MongoDB
-  const fetchUsers = async () => {
+  const [user, setUser] = useState<UserAccount | null>(() => {
+    if (typeof window === 'undefined') return null;
     try {
-      const res = await fetch('/api/users');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.users)) {
-        setUsers(data.users);
-      }
-    } catch (err) {
-      console.error('Failed to fetch users from MongoDB:', err);
+      const stored = window.localStorage.getItem(ACTIVE_USER_SESSION_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
     }
-  };
+  });
 
+  // Load users from DB in background (admin dashboard only)
   useEffect(() => {
-    fetchUsers();
-
-    if (typeof window !== 'undefined') {
-      try {
-        const storedActiveUser = window.localStorage.getItem(ACTIVE_USER_SESSION_KEY);
-        if (storedActiveUser) {
-          setUser(JSON.parse(storedActiveUser));
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.users)) {
+          setUsers(data.users);
         }
-      } catch (err) {
-        console.error('Error reading session active user:', err);
-      }
-    }
+      })
+      .catch(() => {}); // fail silently
   }, []);
 
   const register = async (
     payload: Omit<UserAccount, 'id' | 'createdAt'>,
     registeredItems?: RegisteredItem[]
   ) => {
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...payload,
-          registeredItems: registeredItems || payload.registeredItems || [],
-        }),
-      });
+    // STEP 1: Optimistically log the user in immediately — no waiting
+    const optimisticUser = buildOptimisticUser(payload, registeredItems);
+    setUser(optimisticUser);
+    saveSession(optimisticUser);
 
-      const data = await res.json();
-      if (data.success && data.user) {
-        setUser(data.user);
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(ACTIVE_USER_SESSION_KEY, JSON.stringify(data.user));
+    // STEP 2: Sync to MongoDB in background (non-blocking)
+    fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        registeredItems: registeredItems || [],
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.user) {
+          // Update with the real DB user (has proper id, _id, createdAt)
+          setUser(data.user);
+          saveSession(data.user);
+          setUsers((prev) => {
+            const exists = prev.some((u) => u.email === data.user.email);
+            return exists ? prev.map((u) => (u.email === data.user.email ? data.user : u)) : [data.user, ...prev];
+          });
         }
-        await fetchUsers();
-        return { success: true };
-      } else {
-        return { success: false, error: data.error || 'Failed to register.' };
-      }
-    } catch (err: any) {
-      console.error('Registration failed:', err);
-      return { success: false, error: err.message || 'Server error during registration.' };
-    }
+      })
+      .catch(() => {}); // fail silently — optimistic user already set
+
+    return { success: true };
   };
 
   const login = async (email: string, password: string) => {
@@ -104,39 +131,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-
       const data = await res.json();
       if (data.success && data.user) {
         setUser(data.user);
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(ACTIVE_USER_SESSION_KEY, JSON.stringify(data.user));
-        }
+        saveSession(data.user);
         return { success: true };
       } else {
-        return { success: false, error: data.error || 'Failed to sign in.' };
+        return { success: false, error: data.error || 'Incorrect email or password.' };
       }
-    } catch (err: any) {
-      console.error('Login failed:', err);
-      return { success: false, error: err.message || 'Server error during sign in.' };
+    } catch {
+      return { success: false, error: 'Unable to connect. Please try again.' };
     }
   };
 
   const logout = () => {
     setUser(null);
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(ACTIVE_USER_SESSION_KEY);
-    }
+    clearSession();
   };
 
   const value = useMemo(
-    () => ({
-      user,
-      users,
-      isAuthenticated: Boolean(user),
-      register,
-      login,
-      logout,
-    }),
+    () => ({ user, users, isAuthenticated: Boolean(user), register, login, logout }),
     [user, users]
   );
 
@@ -145,8 +159,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 }

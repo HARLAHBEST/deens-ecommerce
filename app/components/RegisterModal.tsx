@@ -18,6 +18,7 @@ export function RegisterModal({ isOpen, pendingProduct, onClose, onSuccess }: Re
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -30,6 +31,8 @@ export function RegisterModal({ isOpen, pendingProduct, onClose, onSuccess }: Re
       return;
     }
 
+    setIsSubmitting(true);
+
     const itemsToAttach = pendingProduct
       ? [
           {
@@ -41,18 +44,15 @@ export function RegisterModal({ isOpen, pendingProduct, onClose, onSuccess }: Re
         ]
       : [];
 
+    // register() is now optimistic — returns immediately, syncs to DB in background
     const result = await register(
-      {
-        name,
-        email,
-        phone,
-        password: password || 'default123',
-      },
+      { name, email, phone, password: password || 'default123' },
       itemsToAttach
     );
 
     if (!result.success) {
       setError(result.error || 'Failed to register.');
+      setIsSubmitting(false);
       return;
     }
 
@@ -152,9 +152,10 @@ export function RegisterModal({ isOpen, pendingProduct, onClose, onSuccess }: Re
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full rounded-2xl bg-brand-600 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 shadow-lg shadow-brand-600/30"
+              disabled={isSubmitting}
+              className="w-full rounded-2xl bg-brand-600 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 shadow-lg shadow-brand-600/30 disabled:opacity-70"
             >
-              Register & Add to Cart
+              {isSubmitting ? '✓ Registering...' : 'Register & Add to Cart'}
             </button>
           </div>
         </form>
