@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { type Product } from '@/data/products';
+import { products as initialProducts, type Product } from '@/data/products';
 
 type ProductProviderValue = {
   products: Product[];
@@ -15,29 +15,29 @@ type ProductProviderValue = {
 const ProductContext = createContext<ProductProviderValue | undefined>(undefined);
 
 export function ProductProvider({ children }: { children: ReactNode }) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchProducts = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch('/api/products');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.products)) {
-        setProducts(data.products);
-      } else {
-        setProducts([]);
-      }
-    } catch (err) {
-      console.error('Failed to load products from MongoDB API:', err);
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Initialise instantly with static data so the page renders immediately on load
+  const [products, setProducts] = useState<Product[]>(initialProducts);
 
   useEffect(() => {
-    fetchProducts();
+    // After initial paint, fetch from MongoDB in the background
+    // and silently swap in the live data (including any admin edits)
+    const controller = new AbortController();
+
+    fetch('/api/products', { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
+          setProducts(data.products);
+        }
+        // If DB is empty or unreachable, keep showing initialProducts
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error('Background products sync failed, keeping static data:', err);
+        }
+      });
+
+    return () => controller.abort();
   }, []);
 
   const categories = useMemo(
@@ -62,6 +62,10 @@ export function ProductProvider({ children }: { children: ReactNode }) {
   };
 
   const updateProduct = async (updatedProduct: Product) => {
+    // Optimistic UI update — immediately reflect the change
+    setProducts((prev) =>
+      prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p))
+    );
     try {
       const res = await fetch(`/api/products/${updatedProduct.id}`, {
         method: 'PUT',
@@ -80,28 +84,19 @@ export function ProductProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteProduct = async (id: number) => {
+    // Optimistic UI update — remove immediately
+    setProducts((prev) => prev.filter((p) => p.id !== id));
     try {
-      const res = await fetch(`/api/products/${id}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (data.success) {
-        setProducts((prev) => prev.filter((product) => product.id !== id));
-      }
+      await fetch(`/api/products/${id}`, { method: 'DELETE' });
     } catch (err) {
       console.error('Failed to delete product from MongoDB:', err);
     }
   };
 
   const clearAllProducts = async () => {
+    setProducts([]);
     try {
-      const res = await fetch('/api/products', {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (data.success) {
-        setProducts([]);
-      }
+      await fetch('/api/products', { method: 'DELETE' });
     } catch (err) {
       console.error('Failed to clear products from MongoDB:', err);
     }
