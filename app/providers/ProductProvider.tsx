@@ -10,6 +10,7 @@ type ProductProviderValue = {
   updateProduct: (product: Product) => Promise<void>;
   deleteProduct: (id: number) => Promise<void>;
   clearAllProducts: () => Promise<void>;
+  refreshProducts: () => Promise<void>;
 };
 
 const ProductContext = createContext<ProductProviderValue | undefined>(undefined);
@@ -18,26 +19,18 @@ export function ProductProvider({ children }: { children: ReactNode }) {
   // Initialise instantly with static data so the page renders immediately on load
   const [products, setProducts] = useState<Product[]>(initialProducts);
 
+  const refreshProducts = async () => {
+    try {
+      const res = await fetch('/api/products', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.products) && data.products.length > 0) {
+        setProducts(data.products);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
-    // After initial paint, fetch from MongoDB in the background
-    // and silently swap in the live data (including any admin edits)
-    const controller = new AbortController();
-
-    fetch('/api/products', { signal: controller.signal })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
-          setProducts(data.products);
-        }
-        // If DB is empty or unreachable, keep showing initialProducts
-      })
-      .catch((err) => {
-        if (err.name !== 'AbortError') {
-          console.error('Background products sync failed, keeping static data:', err);
-        }
-      });
-
-    return () => controller.abort();
+    refreshProducts();
   }, []);
 
   const categories = useMemo(
@@ -104,7 +97,7 @@ export function ProductProvider({ children }: { children: ReactNode }) {
 
   return (
     <ProductContext.Provider
-      value={{ products, categories, addProduct, updateProduct, deleteProduct, clearAllProducts }}
+      value={{ products, categories, addProduct, updateProduct, deleteProduct, clearAllProducts, refreshProducts }}
     >
       {children}
     </ProductContext.Provider>

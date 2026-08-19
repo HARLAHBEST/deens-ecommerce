@@ -1,15 +1,27 @@
 "use client";
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useProduct } from '../providers/ProductProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { ProductForm } from '../components/ProductForm';
 import type { Product } from '@/data/products';
 
 export default function AdminPage() {
-  const { products, addProduct, updateProduct, deleteProduct, clearAllProducts } = useProduct();
-  const { users } = useAuth();
+  const { products, addProduct, updateProduct, deleteProduct, clearAllProducts, refreshProducts } = useProduct();
+  const { users, refreshUsers, deleteUser } = useAuth();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    refreshUsers();
+    refreshProducts();
+  }, []);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([refreshUsers(), refreshProducts()]);
+    setTimeout(() => setIsRefreshing(false), 600);
+  };
 
   const [activeTab, setActiveTab] = useState<'customers' | 'products'>('customers');
   const [selectedProduct, setSelectedProduct] = useState<Product | undefined>(undefined);
@@ -81,6 +93,15 @@ export default function AdminPage() {
               </h1>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 px-4 py-2 text-sm font-semibold text-brand-300 transition hover:bg-brand-500/20 disabled:opacity-50"
+              >
+                <span className={isRefreshing ? 'animate-spin inline-block' : ''}>🔄</span>
+                {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
+              </button>
               <Link
                 href="/"
                 className="rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/15"
@@ -191,6 +212,7 @@ export default function AdminPage() {
                         <th scope="col" className="px-6 py-4">Phone Number</th>
                         <th scope="col" className="px-6 py-4">Registration Time</th>
                         <th scope="col" className="px-6 py-4">Items Added / Bought at Registration</th>
+                        <th scope="col" className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -231,6 +253,19 @@ export default function AdminPage() {
                               ) : (
                                 <span className="text-xs text-slate-500 italic">No specific initial item logged</span>
                               )}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`Delete customer "${cust.name}" (${cust.email})?`)) {
+                                    deleteUser(cust.id);
+                                  }
+                                }}
+                                className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-300 transition hover:bg-rose-500/25"
+                              >
+                                Delete
+                              </button>
                             </td>
                           </tr>
                         );

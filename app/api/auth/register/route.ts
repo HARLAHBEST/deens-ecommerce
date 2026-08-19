@@ -16,12 +16,13 @@ export async function POST(request: Request) {
     try {
       await dbConnect();
       const existingUser = await UserModel.findOne({ email: email.toLowerCase() });
-
       if (existingUser) {
+        if (name && existingUser.name !== name) existingUser.name = name;
+        if (phone && existingUser.phone !== phone) existingUser.phone = phone;
         if (registeredItems && Array.isArray(registeredItems) && registeredItems.length > 0) {
-          existingUser.registeredItems = [...existingUser.registeredItems, ...registeredItems];
-          await existingUser.save();
+          existingUser.registeredItems = [...(existingUser.registeredItems || []), ...registeredItems];
         }
+        await existingUser.save();
         return NextResponse.json({ success: true, user: existingUser });
       }
 

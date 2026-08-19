@@ -7,9 +7,10 @@ import { useAuth } from '../providers/AuthProvider';
 
 export default function CheckoutPage() {
   const { items, subtotal, shipping, total, clearCart } = useCart();
-  const { user } = useAuth();
+  const { user, refreshUsers } = useAuth();
   
   const [orderComplete, setOrderComplete] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     name: user?.name || '',
     email: user?.email || '',
@@ -31,8 +32,9 @@ export default function CheckoutPage() {
 
   const itemCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items]);
 
-  const handleSendToWhatsApp = (e?: React.FormEvent) => {
+  const handleSendToWhatsApp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    setIsSubmitting(true);
 
     const orderLines = items
       .map(
@@ -41,14 +43,40 @@ export default function CheckoutPage() {
       )
       .join('%0A');
 
-    const message = `Hello Deen's Daily Hub! 👋%0A%0AI would like to place an order:%0A%0A🛍️ ORDER ITEMS:%0A${orderLines}%0A%0A💰 TOTAL AMOUNT: $${total.toFixed(2)}%0A%0A👤 CUSTOMER DETAILS:%0A• Name: ${form.name}%0A• Email: ${form.email}%0A• Phone: ${form.phone || 'N/A'}%0A• Delivery Address: ${form.address}%0A• Notes: ${form.notes || 'None'}%0A%0APlease confirm my order and send account details for payment. Thank you!`;
+    const message = `Hello Deen's Daily Hub! 👋%0A%0AI would like to place an order:%0A%0A🛍️ ORDER ITEMS:%0A${orderLines}%0A%0A💰 TOTAL AMOUNT: $${total.toFixed(2)}%0A%0A👤 CUSTOMER DETAILS:%0A• Name: ${form.name}%0A• Email: ${form.email}%0A• Phone: ${form.phone || 'N/A'}%0A• Delivery Address: ${form.address}%0A• Notes: ${form.notes || 'None'}%0A%0APlease confirm my order and send your account details here on WhatsApp so I can make payment. Thank you!`;
 
     const adminPhone = '14385403074';
     const whatsappUrl = `https://wa.me/${adminPhone}?text=${message}`;
 
+    // Sync ordered items to customer record in MongoDB Atlas for Admin Dashboard
+    try {
+      const itemsToRecord = items.map((i) => ({
+        productId: i.product.id,
+        productName: i.product.name,
+        price: i.product.price,
+        quantity: i.quantity,
+      }));
+
+      await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          registeredItems: itemsToRecord,
+        }),
+      });
+
+      await refreshUsers();
+    } catch (err) {
+      console.error('Failed to sync order items to database:', err);
+    }
+
     window.open(whatsappUrl, '_blank');
     clearCart();
     setOrderComplete(true);
+    setIsSubmitting(false);
   };
 
   return (
@@ -71,7 +99,7 @@ export default function CheckoutPage() {
             </Link>
           </div>
           <p className="mt-3 max-w-2xl text-sm text-slate-400">
-            Review your order details below. Click "Proceed to WhatsApp" to send your order directly to our store admin and receive instant bank payment instructions.
+            Review your order details below. Click "Proceed to WhatsApp" to send your order directly to our store admin and receive bank payment instructions directly on WhatsApp.
           </p>
         </div>
 
@@ -97,44 +125,21 @@ export default function CheckoutPage() {
                 Your order has been opened in WhatsApp. Please send the message to complete your submission.
               </p>
 
-              {/* STORE REPLY & ACCOUNT DETAILS NOTICE */}
-              <div className="mt-8 mx-auto max-w-2xl rounded-3xl border border-brand-500/30 bg-slate-950/90 p-6 text-left shadow-2xl">
-                <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-                  <span className="text-2xl">💬</span>
+              {/* NEXT STEP DIRECT ON WHATSAPP */}
+              <div className="mt-6 mx-auto max-w-xl rounded-3xl border border-emerald-500/20 bg-slate-950/80 p-6 text-left shadow-2xl space-y-3">
+                <div className="flex items-center gap-3 border-b border-white/10 pb-3">
+                  <span className="text-2xl">📱</span>
                   <div>
-                    <h3 className="text-base font-bold text-white">Store Admin Reply Notice</h3>
-                    <p className="text-xs text-brand-300">What to expect from our store team on WhatsApp:</p>
+                    <h3 className="text-base font-bold text-white">Next Step on WhatsApp</h3>
+                    <p className="text-xs text-emerald-400">Direct Payment & Dispatch Confirmation</p>
                   </div>
                 </div>
-
-                <div className="mt-4 space-y-3 text-sm text-slate-300 leading-relaxed">
-                  <p className="italic font-medium text-emerald-300">
-                    "You are welcome to Deen's Daily Hub! We have received your order request. Please complete payment using the details below:"
-                  </p>
-
-                  <div className="rounded-2xl border border-white/10 bg-slate-900 p-4 space-y-2 font-mono text-xs text-slate-200">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Account Name:</span>
-                      <span className="font-bold text-white">Deen's Daily Hub</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Account Number:</span>
-                      <span className="font-bold text-brand-400">1029384756</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Bank Name:</span>
-                      <span className="font-bold text-white">Global Pay Bank</span>
-                    </div>
-                    <div className="flex justify-between pt-2 border-t border-white/10">
-                      <span className="text-slate-400">Amount Due:</span>
-                      <span className="font-bold text-emerald-400">${total.toFixed(2)}</span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-400 pt-1">
-                    Once payment is sent, please reply with your transfer receipt screenshot on WhatsApp for immediate dispatch!
-                  </p>
-                </div>
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  We have prepared your order message. Our store admin will respond to your message on WhatsApp and send our official bank account payment details directly to you there.
+                </p>
+                <p className="text-xs text-slate-400">
+                  Once payment is completed, kindly reply with your transfer receipt on WhatsApp for instant dispatch.
+                </p>
               </div>
 
               <div className="mt-8">
@@ -226,24 +231,22 @@ export default function CheckoutPage() {
                   />
                 </div>
 
-                {/* EXPECTED STORE RESPONSE BANNER */}
-                <div className="rounded-2xl border border-brand-500/30 bg-brand-500/10 p-4 text-xs text-brand-200">
+                {/* WHATSAPP ORDER NOTICE */}
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-200">
                   <p className="font-bold text-white flex items-center gap-1.5 mb-1">
-                    <span>💡</span> Store Admin WhatsApp Reply Notice
+                    <span>💡</span> WhatsApp Checkout Process
                   </p>
-                  <p>
-                    When you place this order, you will be redirected to WhatsApp. The admin will reply with:
-                    <span className="italic block mt-1 text-slate-200">
-                      "You are welcome to our store! Your total is ${total.toFixed(2)}. Please send payment to Account: 1029384756 (Global Pay Bank)..."
-                    </span>
+                  <p className="text-slate-300">
+                    When you click below, your order will open directly on WhatsApp. The store admin will receive your item list and reply with payment account details directly on WhatsApp.
                   </p>
                 </div>
 
                 <button
                   type="submit"
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-4 text-base font-bold text-white transition hover:bg-emerald-700 shadow-xl shadow-emerald-600/30"
+                  disabled={isSubmitting}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-4 text-base font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60 shadow-xl shadow-emerald-600/30"
                 >
-                  <span>📱 Proceed to WhatsApp Order • ${total.toFixed(2)}</span>
+                  <span>{isSubmitting ? '⏳ Processing Order...' : `📱 Proceed to WhatsApp Order • $${total.toFixed(2)}`}</span>
                 </button>
               </form>
             </section>

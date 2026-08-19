@@ -23,12 +23,14 @@ type AuthProviderValue = {
   user: UserAccount | null;
   users: UserAccount[];
   isAuthenticated: boolean;
+  refreshUsers: () => Promise<void>;
   register: (
     payload: Omit<UserAccount, 'id' | 'createdAt'>,
     registeredItems?: RegisteredItem[]
   ) => Promise<{ success: boolean; error?: string }>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  deleteUser: (id: number) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthProviderValue | undefined>(undefined);
@@ -77,49 +79,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  // Load users from DB in background (admin dashboard only)
+  const refreshUsers = async () => {
+    try {
+      const res = await fetch('/api/users', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.users)) {
+        setUsers(data.users);
+      }
+    } catch {}
+  };
+
+  // Load users from DB in background
   useEffect(() => {
-    fetch('/api/users')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.users)) {
-          setUsers(data.users);
-        }
-      })
-      .catch(() => {}); // fail silently
+    refreshUsers();
   }, []);
 
   const register = async (
     payload: Omit<UserAccount, 'id' | 'createdAt'>,
     registeredItems?: RegisteredItem[]
   ) => {
-    // STEP 1: Optimistically log the user in immediately — no waiting
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          registeredItems: registeredItems || [],
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.user) {
+        setUser(data.user);
+        saveSession(data.user);
+        setUsers((prev) => {
+          const exists = prev.some((u) => u.email === data.user.email);
+          return exists
+            ? prev.map((u) => (u.email === data.user.email ? data.user : u))
+            : [data.user, ...prev];
+        });
+        return { success: true };
+      }
+    } catch {
+      // Fallback for offline usage
+    }
+
+    // Offline / Fallback User
     const optimisticUser = buildOptimisticUser(payload, registeredItems);
     setUser(optimisticUser);
     saveSession(optimisticUser);
-
-    // STEP 2: Sync to MongoDB in background (non-blocking)
-    fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...payload,
-        registeredItems: registeredItems || [],
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success && data.user) {
-          // Update with the real DB user (has proper id, _id, createdAt)
-          setUser(data.user);
-          saveSession(data.user);
-          setUsers((prev) => {
-            const exists = prev.some((u) => u.email === data.user.email);
-            return exists ? prev.map((u) => (u.email === data.user.email ? data.user : u)) : [data.user, ...prev];
-          });
-        }
-      })
-      .catch(() => {}); // fail silently — optimistic user already set
+    setUsers((prev) => [optimisticUser, ...prev]);
 
     return { success: true };
   };
@@ -149,8 +157,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearSession();
   };
 
+  const deleteUser = async (id: number) => {
+    setUsers((prev) => prev.filter((u) => u.id !== id));
+    try {
+      await fetch(`/api/users/${id}`, { method: 'DELETE' });
+    } catch {}
+  };
+
   const value = useMemo(
-    () => ({ user, users, isAuthenticated: Boolean(user), register, login, logout }),
+    () => ({ user, users, isAuthenticated: Boolean(user), refreshUsers, register, login, logout, deleteUser }),
     [user, users]
   );
 

@@ -27,6 +27,11 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     await dbConnect();
+    const count = await ProductModel.countDocuments();
+    if (count === 0) {
+      await ProductModel.insertMany(initialProducts);
+    }
+
     const body = await request.json();
 
     const maxProduct = await ProductModel.findOne({}).sort({ id: -1 }).exec();
