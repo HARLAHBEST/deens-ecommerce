@@ -5,49 +5,146 @@ import { products as initialProducts, type Product } from '@/data/products';
 
 type ProductProviderValue = {
   products: Product[];
+  archivedProducts: Product[];
+  allProducts: Product[];
   categories: string[];
+  customCategories: string[];
+  addCategory: (name: string) => Promise<{ success: boolean; error?: string }>;
+  deleteCategory: (name: string) => Promise<void>;
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   updateProduct: (product: Product) => Promise<void>;
   deleteProduct: (id: number) => Promise<void>;
+  restoreProduct: (id: number) => Promise<void>;
+  deleteProductPermanent: (id: number) => Promise<void>;
   clearAllProducts: () => Promise<void>;
   refreshProducts: () => Promise<void>;
 };
 
 const ProductContext = createContext<ProductProviderValue | undefined>(undefined);
+const STORED_CATEGORIES_KEY = 'deensdaily-custom-categories';
 
 export function ProductProvider({ children }: { children: ReactNode }) {
-  // Initialise instantly with static data so the page renders immediately on load
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [allProducts, setAllProducts] = useState<Product[]>(initialProducts);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+
+  const refreshCategories = async () => {
+    try {
+      const res = await fetch('/api/categories', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.categories)) {
+        setCustomCategories((prev) => {
+          const merged = Array.from(new Set([...prev, ...data.categories]));
+          try {
+            localStorage.setItem(STORED_CATEGORIES_KEY, JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
+    } catch {}
+  };
 
   const refreshProducts = async () => {
     try {
       const res = await fetch('/api/products', { cache: 'no-store' });
       const data = await res.json();
       if (data.success && Array.isArray(data.products) && data.products.length > 0) {
-        setProducts(data.products);
+        setAllProducts(data.products);
       }
     } catch {}
   };
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORED_CATEGORIES_KEY);
+      if (stored) {
+        setCustomCategories(JSON.parse(stored));
+      }
+    } catch {}
+
     refreshProducts();
+    refreshCategories();
   }, []);
 
-  const categories = useMemo(
-    () => ['All', ...Array.from(new Set(products.map((product) => product.category)))],
-    [products]
+  // Active products visible in storefront and active catalog
+  const products = useMemo(
+    () => allProducts.filter((p) => !p.isArchived),
+    [allProducts]
   );
+
+  // Deleted/Archived products saved in trash bin for easy re-upload/restoration
+  const archivedProducts = useMemo(
+    () => allProducts.filter((p) => p.isArchived === true),
+    [allProducts]
+  );
+
+  const categories = useMemo(() => {
+    const productCategories = products.map((product) => product.category);
+    const combined = Array.from(
+      new Set([...customCategories, ...productCategories].filter((c) => Boolean(c && c.trim())))
+    );
+    return ['All', ...combined.sort((a, b) => a.localeCompare(b))];
+  }, [products, customCategories]);
+
+  const addCategory = async (name: string): Promise<{ success: boolean; error?: string }> => {
+    const clean = name.trim();
+    if (!clean) return { success: false, error: 'Category name cannot be empty.' };
+
+    const exists = categories.some((c) => c.toLowerCase() === clean.toLowerCase());
+    if (exists) return { success: false, error: 'This category already exists.' };
+
+    // Optimistically update
+    setCustomCategories((prev) => {
+      const next = Array.from(new Set([...prev, clean]));
+      try {
+        localStorage.setItem(STORED_CATEGORIES_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    try {
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: clean }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        return { success: false, error: data.error || 'Failed to save category.' };
+      }
+      return { success: true };
+    } catch {
+      // Still saved locally
+      return { success: true };
+    }
+  };
+
+  const deleteCategory = async (name: string) => {
+    const clean = name.trim();
+    setCustomCategories((prev) => {
+      const next = prev.filter((c) => c.toLowerCase() !== clean.toLowerCase());
+      try {
+        localStorage.setItem(STORED_CATEGORIES_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    try {
+      await fetch(`/api/categories?name=${encodeURIComponent(clean)}`, {
+        method: 'DELETE',
+      });
+    } catch {}
+  };
 
   const addProduct = async (product: Omit<Product, 'id'>) => {
     try {
       const res = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(product),
+        body: JSON.stringify({ ...product, isArchived: false }),
       });
       const data = await res.json();
       if (data.success && data.product) {
-        setProducts((prev) => [...prev, data.product]);
+        setAllProducts((prev) => [...prev, data.product]);
       }
     } catch (err) {
       console.error('Failed to add product to MongoDB:', err);
@@ -55,8 +152,7 @@ export function ProductProvider({ children }: { children: ReactNode }) {
   };
 
   const updateProduct = async (updatedProduct: Product) => {
-    // Optimistic UI update — immediately reflect the change
-    setProducts((prev) =>
+    setAllProducts((prev) =>
       prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p))
     );
     try {
@@ -67,7 +163,7 @@ export function ProductProvider({ children }: { children: ReactNode }) {
       });
       const data = await res.json();
       if (data.success && data.product) {
-        setProducts((prev) =>
+        setAllProducts((prev) =>
           prev.map((product) => (product.id === data.product.id ? data.product : product))
         );
       }
@@ -76,18 +172,46 @@ export function ProductProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Soft-delete: Moves product to Archived / Trash bin so it is saved safely
   const deleteProduct = async (id: number) => {
-    // Optimistic UI update — remove immediately
-    setProducts((prev) => prev.filter((p) => p.id !== id));
+    setAllProducts((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, isArchived: true } : p))
+    );
     try {
       await fetch(`/api/products/${id}`, { method: 'DELETE' });
     } catch (err) {
-      console.error('Failed to delete product from MongoDB:', err);
+      console.error('Failed to archive product in MongoDB:', err);
+    }
+  };
+
+  // Restore: Brings an archived item back to the live storefront
+  const restoreProduct = async (id: number) => {
+    setAllProducts((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, isArchived: false } : p))
+    );
+    try {
+      await fetch(`/api/products/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isArchived: false }),
+      });
+    } catch (err) {
+      console.error('Failed to restore product in MongoDB:', err);
+    }
+  };
+
+  // Permanent Delete: Erases product completely from MongoDB
+  const deleteProductPermanent = async (id: number) => {
+    setAllProducts((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await fetch(`/api/products/${id}?permanent=true`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Failed to permanently delete product:', err);
     }
   };
 
   const clearAllProducts = async () => {
-    setProducts([]);
+    setAllProducts([]);
     try {
       await fetch('/api/products', { method: 'DELETE' });
     } catch (err) {
@@ -97,7 +221,22 @@ export function ProductProvider({ children }: { children: ReactNode }) {
 
   return (
     <ProductContext.Provider
-      value={{ products, categories, addProduct, updateProduct, deleteProduct, clearAllProducts, refreshProducts }}
+      value={{
+        products,
+        archivedProducts,
+        allProducts,
+        categories,
+        customCategories,
+        addCategory,
+        deleteCategory,
+        addProduct,
+        updateProduct,
+        deleteProduct,
+        restoreProduct,
+        deleteProductPermanent,
+        clearAllProducts,
+        refreshProducts,
+      }}
     >
       {children}
     </ProductContext.Provider>

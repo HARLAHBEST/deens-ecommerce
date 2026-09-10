@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useRef, type FormEvent, type ChangeEvent } from 'react';
+import { useEffect, useState, useRef, useMemo, type FormEvent, type ChangeEvent } from 'react';
 import type { Product } from '@/data/products';
+import { useProduct } from '../providers/ProductProvider';
 
 type ProductFormProps = {
   initialProduct?: Product;
@@ -9,86 +10,151 @@ type ProductFormProps = {
   onCancel: () => void;
 };
 
-const emptyProduct = {
+const PRESET_CATEGORIES = [
+  'Audio',
+  'Wearables',
+  'Computers',
+  'Travel',
+  'Lifestyle',
+  'Fashion',
+  'Home & Living',
+  'Food & Drinks',
+];
+
+const emptyProduct: Omit<Product, 'id'> = {
   name: '',
   price: 0,
   category: '',
   rating: 4.5,
   image: '',
+  images: [],
   description: '',
   badge: '',
 };
 
 export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormProps) {
+  const { categories, addCategory } = useProduct();
   const [form, setForm] = useState<Omit<Product, 'id'>>(emptyProduct);
-  const [uploadMode, setUploadMode] = useState<'file' | 'url'>('file');
-  const [imagePreview, setImagePreview] = useState<string>('');
+  const [categoryMode, setCategoryMode] = useState<'preset' | 'custom'>('preset');
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const availableCategories = useMemo(() => {
+    const combined = Array.from(
+      new Set([...categories.filter((c) => c !== 'All'), ...PRESET_CATEGORIES])
+    );
+    return [...combined.sort(), 'Other'];
+  }, [categories]);
 
   useEffect(() => {
     if (initialProduct) {
+      const inPreset = availableCategories.includes(initialProduct.category) && initialProduct.category !== 'Other';
+      setCategoryMode(inPreset ? 'preset' : 'custom');
       setForm({
         name: initialProduct.name,
         price: initialProduct.price,
         category: initialProduct.category,
         rating: initialProduct.rating,
         image: initialProduct.image,
+        images: initialProduct.images && initialProduct.images.length > 0
+          ? initialProduct.images
+          : initialProduct.image ? [initialProduct.image] : [],
         description: initialProduct.description,
         badge: initialProduct.badge ?? '',
       });
-      setImagePreview(initialProduct.image);
     } else {
       setForm(emptyProduct);
-      setImagePreview('');
+      setCategoryMode('preset');
     }
-  }, [initialProduct]);
+  }, [initialProduct, availableCategories]);
 
-  const handleChange = (field: keyof Omit<Product, 'id'>, value: string | number) => {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+  const handleChange = (field: keyof Omit<Product, 'id'>, value: string | number | string[]) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
 
-    if (field === 'image') {
-      setImagePreview(String(value));
+  const handleCategorySelect = (cat: string) => {
+    if (cat === 'Other') {
+      setCategoryMode('custom');
+      handleChange('category', '');
+    } else {
+      setCategoryMode('preset');
+      handleChange('category', cat);
     }
   };
 
-  const [isUploading, setIsUploading] = useState(false);
-
+  // Upload a single image file and add to the images array
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
     setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
+    const newUrls: string[] = [];
 
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (data.success && data.url) {
-        setForm((prev) => ({ ...prev, image: data.url }));
-        setImagePreview(data.url);
-      } else {
-        alert(data.error || 'Failed to upload image to Cloudinary');
+    for (const file of files) {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success && data.url) {
+          newUrls.push(data.url);
+        } else {
+          alert(data.error || `Failed to upload: ${file.name}`);
+        }
+      } catch {
+        alert(`Error uploading: ${file.name}`);
       }
-    } catch (err) {
-      console.error('Image upload failed:', err);
-      alert('Error uploading image to Cloudinary');
-    } finally {
-      setIsUploading(false);
     }
+
+    if (newUrls.length > 0) {
+      setForm((prev) => {
+        const existing = prev.images || [];
+        const combined = [...existing, ...newUrls].slice(0, 8); // max 8
+        return {
+          ...prev,
+          images: combined,
+          image: combined[0] || prev.image,
+        };
+      });
+    }
+
+    // Reset the file input so same files can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setIsUploading(false);
+  };
+
+  const removeImage = (index: number) => {
+    setForm((prev) => {
+      const newImages = prev.images!.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        images: newImages,
+        image: newImages[0] || '',
+      };
+    });
+  };
+
+  const moveImage = (from: number, to: number) => {
+    setForm((prev) => {
+      const arr = [...(prev.images || [])];
+      const [moved] = arr.splice(from, 1);
+      arr.splice(to, 0, moved);
+      return { ...prev, images: arr, image: arr[0] || '' };
+    });
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onSave(form, initialProduct?.id);
+    const cleanCategory = form.category?.trim();
+    if (cleanCategory) {
+      addCategory(cleanCategory);
+    }
+    const images = form.images && form.images.length > 0 ? form.images : form.image ? [form.image] : [];
+    onSave({ ...form, category: cleanCategory || form.category, images, image: images[0] || form.image }, initialProduct?.id);
   };
+
+  const images = form.images || [];
+  const isPreset = (val: string) => availableCategories.filter(c => c !== 'Other').includes(val);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5 rounded-[2rem] border border-white/10 bg-slate-900/90 p-6 shadow-2xl backdrop-blur-md">
@@ -102,31 +168,51 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
         </span>
       </div>
 
+      {/* Name & Category */}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1.5 text-xs font-semibold text-slate-300">
           Product Name *
           <input
             name="name"
             value={form.name}
-            onChange={(event) => handleChange('name', event.target.value)}
+            onChange={(e) => handleChange('name', e.target.value)}
             placeholder="e.g. Smart Noise Canceling Headphones"
-            className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500"
+            className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500 mt-1.5"
             required
           />
         </label>
-        <label className="space-y-1.5 text-xs font-semibold text-slate-300">
+
+        {/* Category Dropdown */}
+        <div className="space-y-1.5 text-xs font-semibold text-slate-300">
           Category *
-          <input
-            name="category"
-            value={form.category}
-            onChange={(event) => handleChange('category', event.target.value)}
-            placeholder="Electronics, Travel, Lifestyle..."
-            className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500"
-            required
-          />
-        </label>
+          <select
+            value={isPreset(form.category) ? form.category : 'Other'}
+            onChange={(e) => handleCategorySelect(e.target.value)}
+            className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 outline-none transition focus:border-brand-500 mt-1.5 cursor-pointer"
+            required={categoryMode === 'preset'}
+          >
+            <option value="" disabled>Select a category...</option>
+            {availableCategories.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat === 'Other' ? '+ Other (Type New Category)' : cat}
+              </option>
+            ))}
+          </select>
+          {/* Custom category input when "Other" is selected */}
+          {categoryMode === 'custom' && (
+            <input
+              value={form.category}
+              onChange={(e) => handleChange('category', e.target.value)}
+              placeholder="Type your new category name..."
+              className="w-full rounded-2xl border border-brand-500/40 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500 mt-2"
+              required
+              autoFocus
+            />
+          )}
+        </div>
       </div>
 
+      {/* Price & Rating */}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1.5 text-xs font-semibold text-slate-300">
           Price ($) *
@@ -136,13 +222,13 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
             min={0}
             step={0.01}
             value={form.price}
-            onChange={(event) => handleChange('price', Number(event.target.value))}
-            className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 outline-none transition focus:border-brand-500"
+            onChange={(e) => handleChange('price', Number(e.target.value))}
+            className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 outline-none transition focus:border-brand-500 mt-1.5"
             required
           />
         </label>
         <label className="space-y-1.5 text-xs font-semibold text-slate-300">
-          Rating (1 - 5)
+          Rating (1–5)
           <input
             name="rating"
             type="number"
@@ -150,113 +236,151 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
             max={5}
             step={0.1}
             value={form.rating}
-            onChange={(event) => handleChange('rating', Number(event.target.value))}
-            className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 outline-none transition focus:border-brand-500"
+            onChange={(e) => handleChange('rating', Number(e.target.value))}
+            className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 outline-none transition focus:border-brand-500 mt-1.5"
           />
         </label>
       </div>
 
-      {/* PRODUCT IMAGE UPLOAD SECTION */}
-      <div className="space-y-2">
+      {/* Multi-Image Upload */}
+      <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-semibold text-slate-300">Product Image *</label>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setUploadMode('file')}
-              className={`px-3 py-1 text-xs rounded-full transition ${
-                uploadMode === 'file'
-                  ? 'bg-brand-600 text-white font-semibold'
-                  : 'bg-slate-950 text-slate-400 hover:text-white'
-              }`}
-            >
-              📁 Upload File
-            </button>
-            <button
-              type="button"
-              onClick={() => setUploadMode('url')}
-              className={`px-3 py-1 text-xs rounded-full transition ${
-                uploadMode === 'url'
-                  ? 'bg-brand-600 text-white font-semibold'
-                  : 'bg-slate-950 text-slate-400 hover:text-white'
-              }`}
-            >
-              🔗 Image URL
-            </button>
-          </div>
+          <p className="text-xs font-semibold text-slate-300">
+            Product Images * <span className="text-slate-500 font-normal">({images.length}/8)</span>
+          </p>
+          {images.length < 8 && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                disabled={isUploading}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 rounded-full bg-brand-600/20 border border-brand-500/30 px-3.5 py-1.5 text-xs font-semibold text-brand-300 hover:bg-brand-600/30 transition disabled:opacity-50"
+              >
+                {isUploading ? (
+                  <span className="animate-pulse">☁️ Uploading...</span>
+                ) : (
+                  <>📁 Add Images</>
+                )}
+              </button>
+            </>
+          )}
         </div>
 
-        {uploadMode === 'file' ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-white/15 bg-slate-950 p-4 text-center hover:border-brand-500/50 transition">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <button
-              type="button"
-              disabled={isUploading}
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition disabled:opacity-50"
-            >
-              {isUploading ? '☁️ Uploading to Cloudinary...' : 'Select Image File From Device'}
-            </button>
-            <p className="mt-2 text-[11px] text-slate-400">Supports JPG, PNG, WEBP, GIF (Saved automatically)</p>
+        {/* Image Thumbnails Grid */}
+        {images.length > 0 ? (
+          <div className="grid grid-cols-4 gap-2">
+            {images.map((url, idx) => (
+              <div
+                key={url + idx}
+                className={`relative group rounded-xl overflow-hidden border-2 transition ${
+                  idx === 0 ? 'border-brand-500' : 'border-white/10'
+                }`}
+              >
+                <img
+                  src={url}
+                  alt={`Product image ${idx + 1}`}
+                  className="h-16 w-full object-cover"
+                />
+                {idx === 0 && (
+                  <span className="absolute bottom-0 left-0 right-0 bg-brand-600/90 text-[9px] font-bold text-white text-center py-0.5">
+                    MAIN
+                  </span>
+                )}
+                {/* Overlay Controls */}
+                <div className="absolute inset-0 bg-slate-900/70 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1">
+                  {idx > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => moveImage(idx, idx - 1)}
+                      className="rounded-lg bg-white/20 p-1 text-white hover:bg-white/30 text-xs"
+                      title="Move left"
+                    >
+                      ←
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeImage(idx)}
+                    className="rounded-lg bg-rose-500/80 p-1 text-white hover:bg-rose-500 text-xs"
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
+                  {idx < images.length - 1 && (
+                    <button
+                      type="button"
+                      onClick={() => moveImage(idx, idx + 1)}
+                      className="rounded-lg bg-white/20 p-1 text-white hover:bg-white/30 text-xs"
+                      title="Move right"
+                    >
+                      →
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* Add More Slot */}
+            {images.length < 8 && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="h-16 rounded-xl border-2 border-dashed border-white/15 bg-slate-950 text-slate-500 hover:border-brand-500/40 hover:text-brand-400 transition text-lg disabled:opacity-40"
+              >
+                +
+              </button>
+            )}
           </div>
         ) : (
-          <input
-            name="image"
-            value={form.image}
-            onChange={(event) => handleChange('image', event.target.value)}
-            placeholder="https://example.com/image.jpg"
-            className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500"
-          />
-        )}
-
-        {/* Live Image Preview */}
-        {imagePreview && (
-          <div className="mt-2 flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950 p-2.5">
-            <img
-              src={imagePreview}
-              alt="Preview"
-              className="h-14 w-14 rounded-xl object-cover border border-white/10"
-            />
-            <div className="text-xs">
-              <span className="font-semibold text-emerald-400">✓ Image Ready</span>
-              <p className="text-slate-400 text-[11px] truncate max-w-[200px]">
-                {imagePreview.startsWith('data:') ? 'Local file uploaded' : imagePreview}
-              </p>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/15 bg-slate-950 py-8 text-center hover:border-brand-500/40 transition disabled:opacity-40"
+          >
+            <span className="text-3xl">🖼️</span>
+            <span className="text-sm font-semibold text-slate-300">Click to upload images</span>
+            <span className="text-xs text-slate-500">JPG, PNG, WEBP supported · Up to 8 images · First image = main</span>
+          </button>
         )}
       </div>
 
+      {/* Description */}
       <label className="space-y-1.5 text-xs font-semibold text-slate-300 block">
         Short Description *
         <textarea
           name="description"
           rows={3}
           value={form.description}
-          onChange={(event) => handleChange('description', event.target.value)}
+          onChange={(e) => handleChange('description', e.target.value)}
           placeholder="Brief features or details..."
-          className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500"
+          className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500 mt-1.5"
           required
         />
       </label>
 
+      {/* Badge */}
       <label className="space-y-1.5 text-xs font-semibold text-slate-300 block">
         Badge / Tag (Optional)
         <input
           name="badge"
           value={form.badge}
-          onChange={(event) => handleChange('badge', event.target.value)}
+          onChange={(e) => handleChange('badge', e.target.value)}
           placeholder="e.g. Best Seller, New, 20% OFF"
-          className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500"
+          className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500 mt-1.5"
         />
       </label>
 
+      {/* Form Actions */}
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
           type="button"
@@ -267,7 +391,8 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
         </button>
         <button
           type="submit"
-          className="rounded-2xl bg-brand-600 px-6 py-2.5 text-xs font-bold text-white hover:bg-brand-700 transition shadow-lg shadow-brand-600/30"
+          disabled={isUploading || images.length === 0}
+          className="rounded-2xl bg-brand-600 px-6 py-2.5 text-xs font-bold text-white hover:bg-brand-700 transition shadow-lg shadow-brand-600/30 disabled:opacity-60"
         >
           {initialProduct ? 'Save Changes' : 'Publish Product'}
         </button>

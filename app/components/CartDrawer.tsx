@@ -16,8 +16,7 @@ type CartDrawerProps = {
 
 export function CartDrawer({ open, items, onClose, onQuantityChange, onRemove }: CartDrawerProps) {
   const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-  const shipping = subtotal > 149 ? 0 : subtotal > 0 ? 12 : 0;
-  const total = subtotal + shipping;
+  const total = subtotal;
 
   return (
     <aside
@@ -94,11 +93,11 @@ export function CartDrawer({ open, items, onClose, onQuantityChange, onRemove }:
               <span>${subtotal.toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span>Shipping</span>
-              <span>{shipping === 0 ? 'Free' : `$${shipping.toFixed(2)}`}</span>
+              <span>Delivery / Shipping</span>
+              <span className="text-emerald-400 font-semibold text-xs">Discussed in Chat</span>
             </div>
             <div className="flex items-center justify-between border-t border-white/10 pt-3 text-base font-semibold text-white">
-              <span>Total</span>
+              <span>Items Total</span>
               <span>${total.toFixed(2)}</span>
             </div>
           </div>
@@ -113,9 +112,11 @@ export function CartDrawer({ open, items, onClose, onQuantityChange, onRemove }:
           ) : (
             <Link
               href="/checkout"
-              className="mt-5 inline-flex w-full justify-center rounded-3xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-700"
+              onClick={onClose}
+              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-600 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-brand-500 shadow-lg shadow-brand-600/30"
             >
-              Proceed to checkout
+              <span>Proceed to Checkout</span>
+              <span>→</span>
             </Link>
           )}
         </div>

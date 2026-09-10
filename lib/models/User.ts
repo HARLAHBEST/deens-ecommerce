@@ -10,8 +10,9 @@ export interface IRegisteredItem {
 export interface IUser extends Document {
   id: number;
   name: string;
-  email: string;
+  email?: string;
   phone: string;
+  contactMethod: 'messenger' | 'phone' | 'whatsapp';
   password?: string;
   createdAt: Date;
   registeredItems: IRegisteredItem[];
@@ -31,8 +32,9 @@ const UserSchema = new Schema<IUser>(
   {
     id: { type: Number, required: true, unique: true },
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true },
-    phone: { type: String, required: true },
+    email: { type: String, default: '', lowercase: true },
+    phone: { type: String, required: true, unique: true },
+    contactMethod: { type: String, enum: ['messenger', 'phone', 'whatsapp'], default: 'messenger' },
     password: { type: String, default: 'default123' },
     registeredItems: { type: [RegisteredItemSchema], default: [] },
   },

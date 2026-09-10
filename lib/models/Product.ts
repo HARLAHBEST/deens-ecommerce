@@ -7,8 +7,10 @@ export interface IProduct extends Document {
   category: string;
   rating: number;
   image: string;
+  images: string[];
   description: string;
   badge?: string;
+  isArchived?: boolean;
 }
 
 const ProductSchema = new Schema<IProduct>(
@@ -19,8 +21,10 @@ const ProductSchema = new Schema<IProduct>(
     category: { type: String, required: true },
     rating: { type: Number, required: true, default: 4.5 },
     image: { type: String, required: true },
+    images: { type: [String], default: [] },
     description: { type: String, required: true },
     badge: { type: String, default: '' },
+    isArchived: { type: Boolean, default: false },
   },
   {
     timestamps: true,

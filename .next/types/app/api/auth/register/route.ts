@@ -1,4 +1,4 @@
-// File: C:\Users\user\Desktop\deen-ecommerce\deensdaily-hub\app\api\auth\register\route.ts
+// File: C:\Users\user\Desktop\desktop\deen-ecommerce\deensdaily-hub\app\api\auth\register\route.ts
 import * as entry from '../../../../../../app/api/auth/register/route.js'
 import type { NextRequest } from 'next/server.js'
 

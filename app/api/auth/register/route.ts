@@ -7,18 +7,28 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, email, phone, password, registeredItems } = body;
+    const { name, phone, password, contactMethod, registeredItems } = body;
 
-    if (!email || !name) {
-      return NextResponse.json({ success: false, error: 'Name and email are required.' }, { status: 400 });
+    if (!name || !name.trim()) {
+      return NextResponse.json({ success: false, error: 'Username is required.' }, { status: 400 });
     }
+
+    const finalPhone = phone?.trim() || `user_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    const syntheticEmail = body.email || `user_${finalPhone.replace(/\D/g, '') || Date.now()}@deensdaily.local`;
+    const method = ['messenger', 'phone', 'whatsapp'].includes(contactMethod) ? contactMethod : 'messenger';
+    const finalPassword = password || 'default123';
 
     try {
       await dbConnect();
-      const existingUser = await UserModel.findOne({ email: email.toLowerCase() });
+
+      // Deduplicate by name or phone
+      const existingUser = await UserModel.findOne({
+        $or: [{ name: name.trim() }, { phone: finalPhone }],
+      });
+
       if (existingUser) {
-        if (name && existingUser.name !== name) existingUser.name = name;
-        if (phone && existingUser.phone !== phone) existingUser.phone = phone;
+        if (password) existingUser.password = finalPassword;
+        existingUser.contactMethod = method;
         if (registeredItems && Array.isArray(registeredItems) && registeredItems.length > 0) {
           existingUser.registeredItems = [...(existingUser.registeredItems || []), ...registeredItems];
         }
@@ -31,29 +41,31 @@ export async function POST(request: Request) {
 
       const newUser = await UserModel.create({
         id: nextId,
-        name,
-        email: email.toLowerCase(),
-        phone: phone || '',
-        password: password || 'default123',
+        name: name.trim(),
+        email: syntheticEmail,
+        phone: finalPhone,
+        contactMethod: method,
+        password: finalPassword,
         registeredItems: registeredItems || [],
       });
 
       return NextResponse.json({ success: true, user: newUser }, { status: 201 });
-    } catch (dbErr: any) {
-      console.warn('MongoDB connection fallback during registration:', dbErr?.message || dbErr);
-      const fallbackUser = {
-        id: Math.floor(Math.random() * 1000) + 10,
-        name,
-        email: email.toLowerCase(),
-        phone: phone || '',
-        password: password || 'default123',
-        createdAt: new Date().toISOString(),
-        registeredItems: registeredItems || [],
-      };
-      return NextResponse.json({ success: true, user: fallbackUser }, { status: 200 });
+    } catch (dbError: any) {
+      console.warn('MongoDB register notice:', dbError?.message || dbError);
+      // Fallback
+      return NextResponse.json({
+        success: true,
+        user: {
+          id: Date.now(),
+          name: name.trim(),
+          phone: finalPhone,
+          contactMethod: method,
+          registeredItems: registeredItems || [],
+        },
+      });
     }
   } catch (error: any) {
-    console.error('Registration API error:', error);
+    console.error('Register API error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

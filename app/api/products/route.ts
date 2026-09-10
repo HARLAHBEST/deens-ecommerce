@@ -37,13 +37,19 @@ export async function POST(request: Request) {
     const maxProduct = await ProductModel.findOne({}).sort({ id: -1 }).exec();
     const nextId = maxProduct ? maxProduct.id + 1 : 1;
 
+    // Build images array: if images[] provided use it, otherwise derive from single image
+    const imagesArray: string[] = Array.isArray(body.images) && body.images.length > 0
+      ? body.images
+      : body.image ? [body.image] : [];
+
     const newProduct = await ProductModel.create({
       id: nextId,
       name: body.name,
       price: Number(body.price),
       category: body.category,
       rating: Number(body.rating) || 4.5,
-      image: body.image,
+      image: imagesArray[0] || body.image || '',
+      images: imagesArray,
       description: body.description,
       badge: body.badge || '',
     });

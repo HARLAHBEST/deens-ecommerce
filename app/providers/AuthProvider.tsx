@@ -1,6 +1,13 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 export type RegisteredItem = {
   productId: number;
@@ -12,11 +19,20 @@ export type RegisteredItem = {
 export type UserAccount = {
   id: number;
   name: string;
-  email: string;
+  email?: string;
   phone: string;
+  contactMethod?: 'messenger' | 'phone' | 'whatsapp';
   password?: string;
   createdAt: string;
   registeredItems?: RegisteredItem[];
+};
+
+type RegisterPayload = {
+  name: string;
+  phone: string;
+  email?: string;
+  password?: string;
+  contactMethod?: 'messenger' | 'phone' | 'whatsapp';
 };
 
 type AuthProviderValue = {
@@ -25,10 +41,13 @@ type AuthProviderValue = {
   isAuthenticated: boolean;
   refreshUsers: () => Promise<void>;
   register: (
-    payload: Omit<UserAccount, 'id' | 'createdAt'>,
+    payload: RegisterPayload,
     registeredItems?: RegisteredItem[]
   ) => Promise<{ success: boolean; error?: string }>;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (
+    identifier: string,
+    password?: string
+  ) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   deleteUser: (id: number) => Promise<void>;
 };
@@ -37,15 +56,15 @@ const AuthContext = createContext<AuthProviderValue | undefined>(undefined);
 const ACTIVE_USER_SESSION_KEY = 'deensdaily-active-user';
 
 function buildOptimisticUser(
-  payload: Omit<UserAccount, 'id' | 'createdAt'>,
+  payload: RegisterPayload,
   registeredItems?: RegisteredItem[]
 ): UserAccount {
   return {
     id: Math.floor(Math.random() * 90000) + 10000,
     name: payload.name,
-    email: payload.email.toLowerCase(),
-    phone: payload.phone || '',
-    password: payload.password,
+    phone: payload.phone,
+    email: payload.email || `user_${payload.phone.replace(/\D/g, '')}@deensdaily.local`,
+    contactMethod: payload.contactMethod || 'messenger',
     createdAt: new Date().toISOString(),
     registeredItems: registeredItems || [],
   };
@@ -69,15 +88,7 @@ function clearSession() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<UserAccount[]>([]);
-  const [user, setUser] = useState<UserAccount | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const stored = window.localStorage.getItem(ACTIVE_USER_SESSION_KEY);
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<UserAccount | null>(null);
 
   const refreshUsers = async () => {
     try {
@@ -89,13 +100,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
   };
 
-  // Load users from DB in background
+  // Restore session from localStorage + load users from DB
   useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(ACTIVE_USER_SESSION_KEY);
+      if (stored) {
+        setUser(JSON.parse(stored));
+      }
+    } catch {}
     refreshUsers();
   }, []);
 
   const register = async (
-    payload: Omit<UserAccount, 'id' | 'createdAt'>,
+    payload: RegisterPayload,
     registeredItems?: RegisteredItem[]
   ) => {
     try {
@@ -112,9 +129,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data.user);
         saveSession(data.user);
         setUsers((prev) => {
-          const exists = prev.some((u) => u.email === data.user.email);
+          const exists = prev.some((u) => u.phone === data.user.phone);
           return exists
-            ? prev.map((u) => (u.email === data.user.email ? data.user : u))
+            ? prev.map((u) => (u.phone === data.user.phone ? data.user : u))
             : [data.user, ...prev];
         });
         return { success: true };
@@ -132,23 +149,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: true };
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (identifier: string, password?: string) => {
     try {
+      // Call the login API for proper server-side authentication
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username: identifier.trim(), password: password || '' }),
       });
       const data = await res.json();
+
       if (data.success && data.user) {
         setUser(data.user);
         saveSession(data.user);
+        setUsers((prev) => {
+          const exists = prev.some((u) => u.id === data.user.id);
+          return exists
+            ? prev.map((u) => (u.id === data.user.id ? data.user : u))
+            : [data.user, ...prev];
+        });
         return { success: true };
-      } else {
-        return { success: false, error: data.error || 'Incorrect email or password.' };
       }
-    } catch {
-      return { success: false, error: 'Unable to connect. Please try again.' };
+
+      return { success: false, error: data.error || 'Login failed.' };
+    } catch (err: any) {
+      // Offline fallback: try in-memory lookup
+      const cleanId = identifier.trim().toLowerCase();
+      const cleanDigits = identifier.replace(/\D/g, '');
+      const found = users.find(
+        (u) =>
+          u.name.toLowerCase() === cleanId ||
+          u.phone.toLowerCase() === cleanId ||
+          (cleanDigits.length >= 6 && u.phone.replace(/\D/g, '').includes(cleanDigits))
+      );
+
+      if (found) {
+        setUser(found);
+        saveSession(found);
+        return { success: true };
+      }
+
+      return { success: false, error: err?.message || 'Login failed. Please check your connection.' };
     }
   };
 
@@ -165,7 +206,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const value = useMemo(
-    () => ({ user, users, isAuthenticated: Boolean(user), refreshUsers, register, login, logout, deleteUser }),
+    () => ({
+      user,
+      users,
+      isAuthenticated: Boolean(user),
+      refreshUsers,
+      register,
+      login,
+      logout,
+      deleteUser,
+    }),
     [user, users]
   );
 

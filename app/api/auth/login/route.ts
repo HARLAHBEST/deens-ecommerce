@@ -8,16 +8,30 @@ export async function POST(request: Request) {
   try {
     await dbConnect();
     const body = await request.json();
-    const { email, password } = body;
+    const { username, password } = body;
 
-    if (!email || !password) {
-      return NextResponse.json({ success: false, error: 'Email and password are required.' }, { status: 400 });
+    if (!username || !password) {
+      return NextResponse.json({ success: false, error: 'Username and password are required.' }, { status: 400 });
     }
 
-    const user = await UserModel.findOne({ email: email.toLowerCase() });
+    const identifier = username.trim();
+    const cleanDigits = identifier.replace(/\D/g, '');
+    const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Search by name (case-insensitive) or phone (exact, case-insensitive, or digit substring)
+    const orConditions: any[] = [
+      { name: { $regex: new RegExp(`^${escaped}$`, 'i') } },
+      { phone: { $regex: new RegExp(`^${escaped}$`, 'i') } },
+    ];
+
+    if (cleanDigits.length >= 6) {
+      orConditions.push({ phone: { $regex: new RegExp(cleanDigits) } });
+    }
+
+    const user = await UserModel.findOne({ $or: orConditions });
 
     if (!user) {
-      return NextResponse.json({ success: false, error: 'No account found with that email.' }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'No account found with that username or phone number.' }, { status: 404 });
     }
 
     if (user.password && user.password !== password) {

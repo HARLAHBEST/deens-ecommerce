@@ -5,8 +5,10 @@ export type Product = {
   category: string;
   rating: number;
   image: string;
+  images?: string[];
   description: string;
   badge?: string;
+  isArchived?: boolean;
 };
 
 export const products: Product[] = [
