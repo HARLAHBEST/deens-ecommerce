@@ -26,6 +26,10 @@ export async function POST(request: Request) {
 
     if (cleanDigits.length >= 6) {
       orConditions.push({ phone: { $regex: new RegExp(cleanDigits) } });
+      if (cleanDigits.length >= 8) {
+        const suffix = cleanDigits.slice(-7);
+        orConditions.push({ phone: { $regex: new RegExp(suffix) } });
+      }
     }
 
     const user = await UserModel.findOne({ $or: orConditions });
