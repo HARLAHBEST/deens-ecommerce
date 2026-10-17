@@ -6,8 +6,10 @@ import { useCart } from '../providers/CartProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { Footer } from '../components/Footer';
 
-const MESSENGER_LINK = 'https://m.me/nurudeen.alabi.752';
-const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '';
+const MESSENGER_LINK = process.env.NEXT_PUBLIC_MESSENGER_LINK || 'https://m.me/nurudeen.alabi.752';
+const WHATSAPP_RAW = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '14385403074';
+const WHATSAPP_NUMBER = WHATSAPP_RAW.replace(/\D/g, '');
+const WHATSAPP_DISPLAY = '+1 (438) 540-3074';
 
 export default function CheckoutPage() {
   const { items, subtotal, shipping, total, clearCart } = useCart();
@@ -15,12 +17,15 @@ export default function CheckoutPage() {
   
   const [orderComplete, setOrderComplete] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copiedMessage, setCopiedMessage] = useState(false);
   const [contactMethod, setContactMethod] = useState<'whatsapp' | 'messenger' | 'phone'>('whatsapp');
   const [savedOrderDetails, setSavedOrderDetails] = useState<{
     name: string;
+    phone: string;
     address: string;
     total: number;
     itemsSummary: string;
+    fullMessage: string;
   } | null>(null);
 
   const [form, setForm] = useState({
@@ -52,22 +57,32 @@ export default function CheckoutPage() {
       .map((i) => `• ${i.quantity}x ${i.product.name} ($${(i.product.price * i.quantity).toFixed(2)})`)
       .join('\n');
 
+    const addressInfo = form.address?.trim() ? `\n📍 *Address:* ${form.address.trim()}` : '';
+    const notesInfo = form.notes?.trim() ? `\n📝 *Notes:* ${form.notes.trim()}` : '';
+    const orderMsg = `Hello Deen's Daily Hub! I just placed an order:\n\n👤 *Customer:* ${form.name}\n📱 *Phone:* ${form.phone}${addressInfo}${notesInfo}\n\n🛍️ *Items:*\n${itemsSummary}\n\n💰 *Total:* $${total.toFixed(2)}\n\nPlease confirm availability and dispatch!`;
+
     setSavedOrderDetails({
       name: form.name,
+      phone: form.phone,
       address: form.address,
       total,
       itemsSummary,
+      fullMessage: orderMsg,
     });
-
-    const addressInfo = form.address?.trim() ? `\n📍 *Address:* ${form.address.trim()}` : '';
-    const orderMsg = `Hello Deen's Daily Hub! I just placed an order:\n\n👤 *Username:* ${form.name}\n📱 *Phone:* ${form.phone}${addressInfo}\n\n🛍️ *Items:*\n${itemsSummary}\n\n💰 *Total:* $${total.toFixed(2)}\n\nPlease confirm availability and dispatch!`;
 
     const redirectUrl =
       contactMethod === 'messenger'
         ? MESSENGER_LINK
-        : WHATSAPP_NUMBER
-        ? `https://wa.me/${WHATSAPP_NUMBER.replace(/\D/g, '')}?text=${encodeURIComponent(orderMsg)}`
-        : `https://api.whatsapp.com/send?text=${encodeURIComponent(orderMsg)}`;
+        : `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(orderMsg)}`;
+
+    // If Messenger, also copy order message to clipboard so user can easily paste it to the owner
+    if (contactMethod === 'messenger' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(orderMsg);
+      } catch (err) {
+        // clipboard fallback
+      }
+    }
 
     // Sync ordered items to customer record in MongoDB Atlas for Admin Dashboard
     try {
@@ -99,23 +114,23 @@ export default function CheckoutPage() {
     setOrderComplete(true);
     setIsSubmitting(false);
 
-    // Automatically navigate / open WhatsApp or Messenger based on user choice
+    // Automatically navigate / open WhatsApp or Messenger directly to the owner
     if (typeof window !== 'undefined') {
       window.open(redirectUrl, '_blank');
     }
   };
 
+  const handleCopyOrderSummary = () => {
+    if (savedOrderDetails?.fullMessage && typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(savedOrderDetails.fullMessage);
+      setCopiedMessage(true);
+      setTimeout(() => setCopiedMessage(false), 3000);
+    }
+  };
+
   const whatsappOrderUrl = savedOrderDetails
-    ? (WHATSAPP_NUMBER
-        ? `https://wa.me/${WHATSAPP_NUMBER.replace(/\D/g, '')}?text=${encodeURIComponent(
-            `Hello Deen's Daily Hub! I just placed an order:\n\n👤 *Username:* ${savedOrderDetails.name}${savedOrderDetails.address ? `\n📍 *Address:* ${savedOrderDetails.address}` : ''}\n\n🛍️ *Items:*\n${savedOrderDetails.itemsSummary}\n\n💰 *Total:* $${savedOrderDetails.total.toFixed(2)}\n\nPlease confirm availability and dispatch!`
-          )}`
-        : `https://api.whatsapp.com/send?text=${encodeURIComponent(
-            `Hello Deen's Daily Hub! I just placed an order:\n\n👤 *Username:* ${savedOrderDetails.name}${savedOrderDetails.address ? `\n📍 *Address:* ${savedOrderDetails.address}` : ''}\n\n💰 *Total:* $${savedOrderDetails.total.toFixed(2)}\n\nPlease confirm dispatch!`
-          )}`)
-    : (WHATSAPP_NUMBER
-        ? `https://wa.me/${WHATSAPP_NUMBER.replace(/\D/g, '')}`
-        : 'https://api.whatsapp.com');
+    ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(savedOrderDetails.fullMessage)}`
+    : `https://wa.me/${WHATSAPP_NUMBER}`;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(227,29,72,0.18),_transparent_32%)] px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
@@ -160,41 +175,61 @@ export default function CheckoutPage() {
               </div>
               <h2 className="mt-4 text-3xl font-extrabold text-white">Order Successfully Placed!</h2>
               <p className="mt-3 text-sm max-w-xl mx-auto leading-6 text-slate-300">
-                Thank you for your order, <span className="font-semibold text-white">{form.name}</span>. Your request has been recorded in our store dispatch queue.
+                Thank you, <span className="font-semibold text-white">{form.name}</span>. Your order has been recorded in our store dispatch system.
               </p>
 
-              {/* NEXT STEP: WHATSAPP & MESSENGER CONTACT */}
-              <div className="mt-6 mx-auto max-w-xl rounded-3xl border border-white/10 bg-slate-950/80 p-6 text-left shadow-2xl space-y-4">
-                <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-                  <span className="text-2xl">💬</span>
-                  <div>
-                    <h3 className="text-base font-bold text-white">Order Confirmation & Dispatch</h3>
-                    <p className="text-xs text-emerald-400">Direct Support via WhatsApp or Messenger</p>
+              {/* DIRECT OWNER CONTACT CARD */}
+              <div className="mt-6 mx-auto max-w-xl rounded-3xl border border-white/10 bg-slate-950/90 p-6 text-left shadow-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">💬</span>
+                    <div>
+                      <h3 className="text-base font-bold text-white">Direct Chat with Store Owner</h3>
+                      <p className="text-xs text-emerald-400">Owner Contact: {WHATSAPP_DISPLAY}</p>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyOrderSummary}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition"
+                  >
+                    <span>{copiedMessage ? '✓ Copied!' : '📋 Copy Details'}</span>
+                  </button>
                 </div>
+
                 <p className="text-sm text-slate-300 leading-relaxed">
-                  Your order has been recorded. We have opened your selected chat ({contactMethod === 'messenger' ? 'Messenger' : 'WhatsApp'}) with your order details. If the chat window didn't open automatically, click below to connect with our dispatch team:
+                  Connect with the owner directly on <strong className="text-white">WhatsApp</strong> or <strong className="text-white">Messenger</strong> to confirm item availability, delivery, and payment:
                 </p>
-                <div className="flex flex-col sm:flex-row gap-3 pt-1">
+
+                {/* Quick Action Direct Links */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <a
                     href={whatsappOrderUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3.5 text-xs font-bold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-600/30"
+                    className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 px-5 py-3.5 text-xs font-bold text-white transition shadow-lg shadow-emerald-600/30"
                   >
-                    <span>💬 Chat on WhatsApp</span>
+                    <span>💬 WhatsApp Owner</span>
+                    <span className="font-mono text-[11px] opacity-90">{WHATSAPP_DISPLAY}</span>
                     <span>→</span>
                   </a>
                   <a
                     href={MESSENGER_LINK}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-5 py-3.5 text-xs font-bold text-white hover:bg-sky-500 transition shadow-lg shadow-sky-600/30"
+                    onClick={handleCopyOrderSummary}
+                    className="flex items-center justify-center gap-2 rounded-2xl bg-sky-600 hover:bg-sky-500 px-5 py-3.5 text-xs font-bold text-white transition shadow-lg shadow-sky-600/30"
                   >
-                    <span>⚡ Chat on Messenger</span>
+                    <span>⚡ Messenger Owner</span>
                     <span>→</span>
                   </a>
                 </div>
+
+                {savedOrderDetails && (
+                  <div className="mt-3 rounded-2xl border border-white/5 bg-slate-900/80 p-4 text-xs font-mono text-slate-300 whitespace-pre-line max-h-48 overflow-y-auto">
+                    {savedOrderDetails.fullMessage}
+                  </div>
+                )}
               </div>
 
               <div className="mt-8">
@@ -219,7 +254,7 @@ export default function CheckoutPage() {
                   {/* Username */}
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-                      Username *
+                      Username / Name *
                     </label>
                     <div className="relative">
                       <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
@@ -239,7 +274,7 @@ export default function CheckoutPage() {
                   {/* Phone Number */}
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-                      Phone Number *
+                      Your Phone Number *
                     </label>
                     <div className="relative">
                       <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
@@ -250,54 +285,62 @@ export default function CheckoutPage() {
                         value={form.phone}
                         onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
                         required
-                        placeholder="e.g. +2348012345678"
+                        placeholder="e.g. +1 438-540-3074"
                         className="w-full rounded-2xl border border-white/10 bg-slate-950/90 pl-11 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-brand-500 transition"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Preferred Contact Method */}
+                {/* Direct Owner Message Channel Selection */}
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-                    Preferred Contact Method
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+                      Direct Message to Owner
+                    </label>
+                    <span className="text-[11px] text-emerald-400 font-medium">WhatsApp: {WHATSAPP_DISPLAY}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
                       type="button"
                       onClick={() => setContactMethod('whatsapp')}
-                      className={`flex items-center justify-center gap-1.5 rounded-2xl border py-2.5 px-2 text-xs font-semibold transition ${
+                      className={`flex items-center gap-3 rounded-2xl border p-3.5 text-left transition ${
                         contactMethod === 'whatsapp'
-                          ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300 shadow-md shadow-emerald-500/10'
-                          : 'border-white/10 bg-slate-950 text-slate-400 hover:border-white/20 hover:text-slate-200'
+                          ? 'border-emerald-500/70 bg-emerald-500/20 text-emerald-200 shadow-lg shadow-emerald-500/10'
+                          : 'border-white/10 bg-slate-950/80 text-slate-400 hover:border-white/20 hover:text-slate-200'
                       }`}
                     >
-                      <span>💬</span>
-                      <span>WhatsApp</span>
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 text-xl">
+                        💬
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold text-white flex items-center justify-between">
+                          <span>WhatsApp Direct</span>
+                          <span className="text-[10px] text-emerald-400 font-mono">Owner DM</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-300/80 font-mono mt-0.5">{WHATSAPP_DISPLAY}</p>
+                      </div>
                     </button>
+
                     <button
                       type="button"
                       onClick={() => setContactMethod('messenger')}
-                      className={`flex items-center justify-center gap-1.5 rounded-2xl border py-2.5 px-2 text-xs font-semibold transition ${
+                      className={`flex items-center gap-3 rounded-2xl border p-3.5 text-left transition ${
                         contactMethod === 'messenger'
-                          ? 'border-sky-500/50 bg-sky-500/15 text-sky-300 shadow-md shadow-sky-500/10'
-                          : 'border-white/10 bg-slate-950 text-slate-400 hover:border-white/20 hover:text-slate-200'
+                          ? 'border-sky-500/70 bg-sky-500/20 text-sky-200 shadow-lg shadow-sky-500/10'
+                          : 'border-white/10 bg-slate-950/80 text-slate-400 hover:border-white/20 hover:text-slate-200'
                       }`}
                     >
-                      <span>⚡</span>
-                      <span>Messenger</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setContactMethod('phone')}
-                      className={`flex items-center justify-center gap-1.5 rounded-2xl border py-2.5 px-2 text-xs font-semibold transition ${
-                        contactMethod === 'phone'
-                          ? 'border-amber-500/50 bg-amber-500/15 text-amber-300 shadow-md shadow-amber-500/10'
-                          : 'border-white/10 bg-slate-950 text-slate-400 hover:border-white/20 hover:text-slate-200'
-                      }`}
-                    >
-                      <span>📱</span>
-                      <span>Call / SMS</span>
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-sky-500/20 text-sky-300 text-xl">
+                        ⚡
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold text-white flex items-center justify-between">
+                          <span>Messenger Direct</span>
+                          <span className="text-[10px] text-sky-400 font-mono">Owner DM</span>
+                        </div>
+                        <p className="text-[11px] text-sky-300/80 truncate mt-0.5">m.me/nurudeen.alabi.752</p>
+                      </div>
                     </button>
                   </div>
                 </div>
@@ -335,10 +378,10 @@ export default function CheckoutPage() {
                 {/* ORDER SUBMISSION NOTICE */}
                 <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-4 text-xs text-sky-200">
                   <p className="font-bold text-white flex items-center gap-1.5 mb-1">
-                    <span>💡</span> Order Confirmation Process
+                    <span>💡</span> Direct Order Confirmation
                   </p>
                   <p className="text-slate-300">
-                    Your order will be instantly submitted to our dispatch team. We will verify your items and reach out directly with payment and dispatch details.
+                    Your order will be instantly submitted and open a direct message with the store owner ({contactMethod === 'messenger' ? 'Messenger' : `WhatsApp ${WHATSAPP_DISPLAY}`}) with all your items prefilled.
                   </p>
                 </div>
 
@@ -348,19 +391,15 @@ export default function CheckoutPage() {
                   className={`mt-4 flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-base font-bold text-white transition disabled:opacity-60 shadow-xl ${
                     contactMethod === 'whatsapp'
                       ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
-                      : contactMethod === 'messenger'
-                      ? 'bg-sky-600 hover:bg-sky-500 shadow-sky-600/30'
-                      : 'bg-brand-600 hover:bg-brand-700 shadow-brand-600/30'
+                      : 'bg-sky-600 hover:bg-sky-500 shadow-sky-600/30'
                   }`}
                 >
                   {isSubmitting ? (
-                    <span>⏳ Processing Order & Connecting...</span>
+                    <span>⏳ Processing Order & Opening Chat...</span>
                   ) : contactMethod === 'whatsapp' ? (
-                    <span>💬 Place Order via WhatsApp • ${total.toFixed(2)} →</span>
-                  ) : contactMethod === 'messenger' ? (
-                    <span>⚡ Place Order via Messenger • ${total.toFixed(2)} →</span>
+                    <span>💬 Place Order via WhatsApp ({WHATSAPP_DISPLAY}) • ${total.toFixed(2)} →</span>
                   ) : (
-                    <span>🛍️ Place Order • ${total.toFixed(2)} →</span>
+                    <span>⚡ Place Order via Messenger (Direct) • ${total.toFixed(2)} →</span>
                   )}
                 </button>
               </form>

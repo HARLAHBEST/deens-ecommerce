@@ -12,10 +12,9 @@ import { useCart } from './providers/CartProvider';
 import { useAuth } from './providers/AuthProvider';
 import type { Product } from '@/data/products';
 
-const MESSENGER_LINK = "https://m.me/nurudeen.alabi.752";
-const WHATSAPP_LINK = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER
-  ? `https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER.replace(/\D/g, '')}?text=Hello%20Deen%27s%20Daily%20Hub%2C%20I%20have%20an%20inquiry%20about%20your%20products`
-  : 'https://api.whatsapp.com/send?text=Hello%20Deen%27s%20Daily%20Hub%2C%20I%20have%20an%20inquiry%20about%20your%20products';
+const MESSENGER_LINK = process.env.NEXT_PUBLIC_MESSENGER_LINK || "https://m.me/nurudeen.alabi.752";
+const WHATSAPP_NUMBER = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '14385403074').replace(/\D/g, '');
+const WHATSAPP_LINK = `https://wa.me/${WHATSAPP_NUMBER}?text=Hello%20Deen%27s%20Daily%20Hub%2C%20I%20have%20an%20inquiry%20about%20your%20products`;
 
 export default function HomePage() {
   const { products, categories } = useProduct();

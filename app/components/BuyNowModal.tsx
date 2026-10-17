@@ -2,8 +2,8 @@
 
 import type { Product } from '@/data/products';
 
-const MESSENGER_LINK = 'https://m.me/nurudeen.alabi.752';
-const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '';
+const MESSENGER_LINK = process.env.NEXT_PUBLIC_MESSENGER_LINK || 'https://m.me/nurudeen.alabi.752';
+const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '14385403074';
 
 type BuyNowModalProps = {
   isOpen: boolean;
