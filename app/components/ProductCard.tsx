@@ -7,9 +7,10 @@ type ProductCardProps = {
   product: Product;
   onAddToCart: (id: number) => void;
   onBuyNow: (product: Product) => void;
+  onViewImage?: (product: Product, index: number) => void;
 };
 
-export function ProductCard({ product, onAddToCart, onBuyNow }: ProductCardProps) {
+export function ProductCard({ product, onAddToCart, onBuyNow, onViewImage }: ProductCardProps) {
   const [imgError, setImgError] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -33,17 +34,35 @@ export function ProductCard({ product, onAddToCart, onBuyNow }: ProductCardProps
     setActiveIndex((i) => (i - 1 + imageList.length) % imageList.length);
   };
 
+  const handleImageClick = () => {
+    if (onViewImage) {
+      onViewImage(product, activeIndex);
+    }
+  };
+
   return (
     <article className="group relative overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-2xl backdrop-blur-md transition-all duration-300 hover:-translate-y-1.5 hover:border-brand-500/50 hover:shadow-brand-500/10 flex flex-col">
-      {/* Image Area */}
-      <div className="relative h-64 overflow-hidden bg-slate-950 flex items-center justify-center flex-shrink-0">
+      {/* Full Image Area (Uncropped with Ambient Backdrop) */}
+      <div
+        onClick={handleImageClick}
+        className="relative h-64 overflow-hidden bg-slate-950 flex items-center justify-center flex-shrink-0 cursor-pointer"
+        title="Click to view full image in modal"
+      >
+        {/* Ambient blurred glow from the actual product photo */}
+        {currentImage && !imgError && (
+          <div
+            className="absolute inset-0 bg-cover bg-center blur-2xl opacity-25 scale-125 pointer-events-none"
+            style={{ backgroundImage: `url(${currentImage})` }}
+          />
+        )}
+
         {currentImage && !imgError ? (
           <img
             key={currentImage}
             src={currentImage}
             alt={product.name}
             onError={() => setImgError(true)}
-            className="h-full w-full object-cover transition duration-700 group-hover:scale-110"
+            className="relative z-10 max-h-full max-w-full object-contain p-2.5 transition duration-500 group-hover:scale-105"
           />
         ) : (
           <div className="flex flex-col items-center justify-center p-6 text-center text-slate-500 bg-gradient-to-br from-slate-900 to-slate-950 w-full h-full">
@@ -53,6 +72,14 @@ export function ProductCard({ product, onAddToCart, onBuyNow }: ProductCardProps
             <span className="text-xs font-semibold text-slate-400">No Image</span>
           </div>
         )}
+
+        {/* Hover View Badge */}
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/30 opacity-0 group-hover:opacity-100 transition duration-200 pointer-events-none">
+          <span className="rounded-full bg-slate-900/90 border border-white/20 px-3.5 py-1.5 text-[11px] font-bold text-white shadow-xl backdrop-blur-md flex items-center gap-1.5 transform translate-y-1 group-hover:translate-y-0 transition">
+            <span>🔍</span>
+            <span>View Full Image</span>
+          </span>
+        </div>
 
         {/* Carousel Arrows */}
         {hasMultiple && (
@@ -106,10 +133,26 @@ export function ProductCard({ product, onAddToCart, onBuyNow }: ProductCardProps
       {/* Content */}
       <div className="flex flex-col flex-1 space-y-4 p-5">
         <div>
-          <span className="inline-block rounded-full bg-brand-500/10 border border-brand-500/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-brand-400 mb-2">
-            {product.category}
-          </span>
-          <h3 className="text-lg font-bold text-white tracking-tight line-clamp-1">{product.name}</h3>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="inline-block rounded-full bg-brand-500/10 border border-brand-500/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-brand-400">
+              {product.category}
+            </span>
+            <button
+              type="button"
+              onClick={handleImageClick}
+              className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold transition flex items-center gap-1"
+              title="Click to view full image in modal"
+            >
+              <span>🖼️ View</span>
+            </button>
+          </div>
+          <h3
+            onClick={handleImageClick}
+            className="text-lg font-bold text-white tracking-tight line-clamp-1 cursor-pointer hover:text-brand-300 transition"
+            title="Click to view full details"
+          >
+            {product.name}
+          </h3>
           <p className="mt-1.5 text-xs leading-5 text-slate-400 line-clamp-2">{product.description}</p>
         </div>
 

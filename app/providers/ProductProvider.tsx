@@ -136,18 +136,38 @@ export function ProductProvider({ children }: { children: ReactNode }) {
   };
 
   const addProduct = async (product: Omit<Product, 'id'>) => {
+    const maxId = allProducts.reduce((max, p) => Math.max(max, p.id || 0), 0);
+    const nextFallbackId = maxId + 1;
+    const fallbackImages = (product.images && product.images.length > 0)
+      ? product.images
+      : [product.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80'];
+
+    const optimisticProduct: Product = {
+      ...product,
+      id: nextFallbackId,
+      image: fallbackImages[0],
+      images: fallbackImages,
+      isArchived: false,
+    };
+
+    // Optimistically add to UI state immediately
+    setAllProducts((prev) => [optimisticProduct, ...prev]);
+
     try {
       const res = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...product, isArchived: false }),
+        body: JSON.stringify({ ...optimisticProduct }),
       });
       const data = await res.json();
       if (data.success && data.product) {
-        setAllProducts((prev) => [...prev, data.product]);
+        setAllProducts((prev) => [
+          data.product,
+          ...prev.filter((p) => p.id !== optimisticProduct.id && p.id !== data.product.id),
+        ]);
       }
     } catch (err) {
-      console.error('Failed to add product to MongoDB:', err);
+      console.error('Failed to sync product to MongoDB:', err);
     }
   };
 

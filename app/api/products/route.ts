@@ -42,16 +42,19 @@ export async function POST(request: Request) {
       ? body.images
       : body.image ? [body.image] : [];
 
+    const defaultImg = imagesArray[0] || body.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
+
     const newProduct = await ProductModel.create({
       id: nextId,
-      name: body.name,
-      price: Number(body.price),
-      category: body.category,
+      name: body.name || 'Untitled Product',
+      price: Number(body.price) || 0,
+      category: body.category || 'General',
       rating: Number(body.rating) || 4.5,
-      image: imagesArray[0] || body.image || '',
-      images: imagesArray,
-      description: body.description,
+      image: defaultImg,
+      images: imagesArray.length > 0 ? imagesArray : [defaultImg],
+      description: body.description || body.name || 'Quality product available at Deen\'s Daily Hub.',
       badge: body.badge || '',
+      isArchived: false,
     });
 
     return NextResponse.json({ success: true, product: newProduct }, { status: 201 });

@@ -6,6 +6,7 @@ import { CartDrawer } from './components/CartDrawer';
 import { ProductCard } from './components/ProductCard';
 import { RegisterModal } from './components/RegisterModal';
 import { BuyNowModal } from './components/BuyNowModal';
+import { ProductImageModal } from './components/ProductImageModal';
 import { Footer } from './components/Footer';
 import { useProduct } from './providers/ProductProvider';
 import { useCart } from './providers/CartProvider';
@@ -32,6 +33,15 @@ export default function HomePage() {
   // Buy Now Modal State
   const [buyNowModalOpen, setBuyNowModalOpen] = useState(false);
   const [buyNowProduct, setBuyNowProduct] = useState<Product | null>(null);
+
+  // Full Image Modal State
+  const [imageModalProduct, setImageModalProduct] = useState<Product | null>(null);
+  const [imageModalIndex, setImageModalIndex] = useState(0);
+
+  const handleOpenImageModal = (product: Product, index: number = 0) => {
+    setImageModalProduct(product);
+    setImageModalIndex(index);
+  };
 
   const filteredProducts = useMemo(() => {
     return products
@@ -275,6 +285,7 @@ export default function HomePage() {
                   product={product}
                   onAddToCart={() => handleAddToCart(product.id)}
                   onBuyNow={handleBuyNow}
+                  onViewImage={handleOpenImageModal}
                 />
               ))}
             </div>
@@ -290,6 +301,15 @@ export default function HomePage() {
         }}
       />
 
+      {/* Product Full Image & Details Card Modal */}
+      <ProductImageModal
+        isOpen={Boolean(imageModalProduct)}
+        product={imageModalProduct}
+        initialIndex={imageModalIndex}
+        onClose={() => setImageModalProduct(null)}
+        onAddToCart={handleAddToCart}
+        onBuyNow={handleBuyNow}
+      />
 
       {/* Quick Registration Modal */}
       <RegisterModal
@@ -312,7 +332,6 @@ export default function HomePage() {
         items={cartItems}
         onClose={() => setCartOpen(false)}
         onQuantityChange={updateQuantity}
-        onRemove={removeItem}
       />
     </div>
   );

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useProduct } from '../providers/ProductProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { ProductForm } from '../components/ProductForm';
+import { ProductImageModal } from '../components/ProductImageModal';
 import type { Product } from '@/data/products';
 
 export default function AdminPage() {
@@ -39,6 +40,9 @@ export default function AdminPage() {
 
   const [activeTab, setActiveTab] = useState<'customers' | 'products' | 'categories' | 'archived'>('customers');
   const [selectedProduct, setSelectedProduct] = useState<Product | undefined>(undefined);
+  const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [statusToast, setStatusToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [productFilter, setProductFilter] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
   const [archivedFilter, setArchivedFilter] = useState('');
@@ -69,6 +73,7 @@ export default function AdminPage() {
     if (confirm('Are you sure you want to delete ALL active products from the database? This will clear the catalog for deployment.')) {
       await clearAllProducts();
       setSelectedProduct(undefined);
+      setIsProductModalOpen(false);
     }
   };
 
@@ -109,13 +114,22 @@ export default function AdminPage() {
     });
   }, [nonAdminCustomers, customerFilter]);
 
-  const handleSaveProduct = (product: Omit<Product, 'id'>, id?: number) => {
-    if (id) {
-      updateProduct({ ...product, id });
-    } else {
-      addProduct(product);
+  const handleSaveProduct = async (product: Omit<Product, 'id'>, id?: number) => {
+    try {
+      if (id) {
+        await updateProduct({ ...product, id });
+        setStatusToast({ message: `Product "${product.name}" updated successfully!`, type: 'success' });
+      } else {
+        await addProduct(product);
+        setStatusToast({ message: `Product "${product.name}" published to catalog!`, type: 'success' });
+      }
+      setSelectedProduct(undefined);
+      setIsProductModalOpen(false);
+      setTimeout(() => setStatusToast(null), 4000);
+    } catch (err: any) {
+      setStatusToast({ message: err?.message || 'Error saving product.', type: 'error' });
+      setTimeout(() => setStatusToast(null), 4000);
     }
-    setSelectedProduct(undefined);
   };
 
   const formatDate = (isoString: string) => {
@@ -132,6 +146,45 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
+      {/* Toast feedback notification */}
+      {statusToast && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold text-white shadow-2xl backdrop-blur-md transition-all ${
+          statusToast.type === 'success'
+            ? 'bg-emerald-600/95 border border-emerald-400/40 shadow-emerald-600/30'
+            : 'bg-rose-600/95 border border-rose-400/40 shadow-rose-600/30'
+        }`}>
+          <span>{statusToast.type === 'success' ? '✅' : '⚠️'}</span>
+          <span>{statusToast.message}</span>
+        </div>
+      )}
+
+      {/* ADD / EDIT PRODUCT MODAL */}
+      {isProductModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-md overflow-y-auto">
+          <div className="relative w-full max-w-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
+            <button
+              type="button"
+              onClick={() => {
+                setIsProductModalOpen(false);
+                setSelectedProduct(undefined);
+              }}
+              className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-slate-300 hover:bg-white/20 hover:text-white transition"
+              title="Close modal"
+            >
+              ✕
+            </button>
+            <ProductForm
+              initialProduct={selectedProduct}
+              onSave={handleSaveProduct}
+              onCancel={() => {
+                setIsProductModalOpen(false);
+                setSelectedProduct(undefined);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto max-w-7xl space-y-8">
         {/* Header Banner */}
         <section className="rounded-[2.5rem] border border-white/10 bg-slate-900/80 p-6 sm:p-8 shadow-2xl backdrop-blur-md">
@@ -146,7 +199,19 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 self-end sm:self-auto">
+            <div className="flex flex-wrap items-center gap-3 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('products');
+                  setSelectedProduct(undefined);
+                  setIsProductModalOpen(true);
+                }}
+                className="rounded-full bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-bold text-white transition shadow-lg shadow-emerald-600/30 flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>+</span>
+                <span>Add New Product</span>
+              </button>
               <button
                 type="button"
                 onClick={handleRefresh}
@@ -163,6 +228,7 @@ export default function AdminPage() {
               </Link>
             </div>
           </div>
+
 
           {/* Quick Metrics Bar */}
           <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-5">
@@ -418,10 +484,14 @@ export default function AdminPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSelectedProduct(undefined)}
-                    className="rounded-full bg-brand-600 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-500 transition shadow-lg shadow-brand-600/30"
+                    onClick={() => {
+                      setSelectedProduct(undefined);
+                      setIsProductModalOpen(true);
+                    }}
+                    className="rounded-full bg-brand-600 px-4 py-2 text-xs font-bold text-white hover:bg-brand-500 transition shadow-lg shadow-brand-600/30 flex items-center gap-1.5 cursor-pointer"
                   >
-                    + Add New Product
+                    <span>+</span>
+                    <span>Add New Product</span>
                   </button>
                 </div>
               </div>
@@ -433,13 +503,23 @@ export default function AdminPage() {
                     className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl border border-white/10 bg-slate-900/70 p-4 hover:border-brand-500/30 transition shadow-soft"
                   >
                     <div className="flex items-center gap-4">
-                      <img
-                        src={(product.images && product.images.length > 0) ? product.images[0] : product.image}
-                        alt={product.name}
-                        className="h-16 w-16 rounded-xl object-cover border border-white/10 flex-shrink-0"
-                      />
+                      {/* Uncropped Full Image Display & Click to View Modal */}
+                      <div
+                        onClick={() => setPreviewProduct(product)}
+                        className="relative h-16 w-16 rounded-xl overflow-hidden bg-slate-950 border border-white/10 flex-shrink-0 cursor-pointer group/img"
+                        title="Click to view full image in card modal"
+                      >
+                        <img
+                          src={(product.images && product.images.length > 0) ? product.images[0] : product.image}
+                          alt={product.name}
+                          className="h-full w-full object-contain p-1 transition group-hover/img:scale-110"
+                        />
+                        <span className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover/img:opacity-100 transition flex items-center justify-center text-xs text-white">
+                          🔍
+                        </span>
+                      </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-mono text-brand-400 font-bold">#{product.id}</span>
                           <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] uppercase font-semibold text-slate-400">
                             {product.category}
@@ -449,8 +529,22 @@ export default function AdminPage() {
                               📷 {product.images.length} photos
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => setPreviewProduct(product)}
+                            className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold transition underline underline-offset-2 ml-1"
+                            title="Click to view full image in card modal"
+                          >
+                            View image link ↗
+                          </button>
                         </div>
-                        <h3 className="text-base font-semibold text-white mt-1">{product.name}</h3>
+                        <h3
+                          onClick={() => setPreviewProduct(product)}
+                          className="text-base font-semibold text-white mt-1 cursor-pointer hover:text-brand-300 transition"
+                          title="Click to view full image in card modal"
+                        >
+                          {product.name}
+                        </h3>
                         <p className="text-sm font-bold text-emerald-400 mt-0.5">${product.price.toFixed(2)}</p>
                       </div>
                     </div>
@@ -458,8 +552,11 @@ export default function AdminPage() {
                     <div className="flex items-center gap-2 self-end sm:self-auto">
                       <button
                         type="button"
-                        onClick={() => setSelectedProduct(product)}
-                        className="rounded-xl bg-brand-600/80 px-3.5 py-2 text-xs font-semibold text-white hover:bg-brand-600 transition"
+                        onClick={() => {
+                          setSelectedProduct(product);
+                          setIsProductModalOpen(true);
+                        }}
+                        className="rounded-xl bg-brand-600/80 px-3.5 py-2 text-xs font-semibold text-white hover:bg-brand-600 transition cursor-pointer"
                       >
                         Edit
                       </button>
@@ -470,7 +567,7 @@ export default function AdminPage() {
                             deleteProduct(product.id);
                           }
                         }}
-                        className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 transition"
+                        className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 transition cursor-pointer"
                         title="Move to Trash Bin (Soft Delete)"
                       >
                         Delete
@@ -632,13 +729,22 @@ export default function AdminPage() {
                     className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl border border-amber-500/20 bg-slate-950/70 p-4 hover:border-amber-500/40 transition"
                   >
                     <div className="flex items-center gap-4">
-                      <img
-                        src={(product.images && product.images.length > 0) ? product.images[0] : product.image}
-                        alt={product.name}
-                        className="h-16 w-16 rounded-xl object-cover border border-white/10 opacity-80 flex-shrink-0"
-                      />
+                      <div
+                        onClick={() => setPreviewProduct(product)}
+                        className="relative h-16 w-16 rounded-xl overflow-hidden bg-slate-950 border border-white/10 opacity-90 flex-shrink-0 cursor-pointer group/archivedImg"
+                        title="Click to view full image in card modal"
+                      >
+                        <img
+                          src={(product.images && product.images.length > 0) ? product.images[0] : product.image}
+                          alt={product.name}
+                          className="h-full w-full object-contain p-1 transition group-hover/archivedImg:scale-110"
+                        />
+                        <span className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover/archivedImg:opacity-100 transition flex items-center justify-center text-xs text-white">
+                          🔍
+                        </span>
+                      </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-mono text-amber-400 font-bold">#{product.id}</span>
                           <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] uppercase font-semibold text-slate-400">
                             {product.category}
@@ -646,8 +752,21 @@ export default function AdminPage() {
                           <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300">
                             Archived
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewProduct(product)}
+                            className="text-[11px] text-sky-400 hover:text-sky-300 transition underline underline-offset-2 ml-1"
+                          >
+                            View image link ↗
+                          </button>
                         </div>
-                        <h3 className="text-base font-semibold text-white mt-1">{product.name}</h3>
+                        <h3
+                          onClick={() => setPreviewProduct(product)}
+                          className="text-base font-semibold text-white mt-1 cursor-pointer hover:text-brand-300 transition"
+                          title="Click to view full image in card modal"
+                        >
+                          {product.name}
+                        </h3>
                         <p className="text-sm font-bold text-emerald-400 mt-0.5">${product.price.toFixed(2)}</p>
                       </div>
                     </div>
@@ -683,6 +802,14 @@ export default function AdminPage() {
           </section>
         )}
       </div>
+
+      {/* CARD-LIKE PRODUCT IMAGE PREVIEW MODAL */}
+      <ProductImageModal
+        isOpen={Boolean(previewProduct)}
+        product={previewProduct}
+        onClose={() => setPreviewProduct(null)}
+      />
     </main>
   );
 }
+

@@ -201,6 +201,11 @@ export function Footer({ onCategoryClick }: { onCategoryClick?: (category: strin
                 </Link>
               </li>
               <li>
+                <Link href="/admin" className="text-brand-400 hover:text-brand-300 font-semibold transition flex items-center gap-1">
+                  <span>⚙️ Store Admin & Products</span>
+                </Link>
+              </li>
+              <li>
                 <span className="text-slate-500 cursor-default">Privacy Policy</span>
               </li>
               <li>

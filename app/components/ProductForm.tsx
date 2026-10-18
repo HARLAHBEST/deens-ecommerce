@@ -32,11 +32,22 @@ const emptyProduct: Omit<Product, 'id'> = {
   badge: '',
 };
 
+const SAMPLE_IMAGES = [
+  { label: 'Gadget', url: 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800&q=80' },
+  { label: 'Headphones', url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80' },
+  { label: 'Watch', url: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80' },
+  { label: 'Sneakers', url: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=80' },
+];
+
 export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormProps) {
   const { categories, addCategory } = useProduct();
   const [form, setForm] = useState<Omit<Product, 'id'>>(emptyProduct);
   const [categoryMode, setCategoryMode] = useState<'preset' | 'custom'>('preset');
   const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [imageUrlInput, setImageUrlInput] = useState('');
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [formError, setFormError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const availableCategories = useMemo(() => {
@@ -47,6 +58,7 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
   }, [categories]);
 
   useEffect(() => {
+    setFormError('');
     if (initialProduct) {
       const inPreset = availableCategories.includes(initialProduct.category) && initialProduct.category !== 'Other';
       setCategoryMode(inPreset ? 'preset' : 'custom');
@@ -69,10 +81,12 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
   }, [initialProduct, availableCategories]);
 
   const handleChange = (field: keyof Omit<Product, 'id'>, value: string | number | string[]) => {
+    setFormError('');
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleCategorySelect = (cat: string) => {
+    setFormError('');
     if (cat === 'Other') {
       setCategoryMode('custom');
       handleChange('category', '');
@@ -82,12 +96,13 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
     }
   };
 
-  // Upload a single image file and add to the images array
+  // Upload image file via Cloudinary
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
 
     setIsUploading(true);
+    setFormError('');
     const newUrls: string[] = [];
 
     for (const file of files) {
@@ -99,17 +114,17 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
         if (data.success && data.url) {
           newUrls.push(data.url);
         } else {
-          alert(data.error || `Failed to upload: ${file.name}`);
+          setFormError(data.error || `Failed to upload: ${file.name}`);
         }
       } catch {
-        alert(`Error uploading: ${file.name}`);
+        setFormError(`Error uploading ${file.name}. You can also use "Add via Image URL".`);
       }
     }
 
     if (newUrls.length > 0) {
       setForm((prev) => {
         const existing = prev.images || [];
-        const combined = [...existing, ...newUrls].slice(0, 8); // max 8
+        const combined = [...existing, ...newUrls].slice(0, 8);
         return {
           ...prev,
           images: combined,
@@ -118,9 +133,43 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
       });
     }
 
-    // Reset the file input so same files can be re-selected
     if (fileInputRef.current) fileInputRef.current.value = '';
     setIsUploading(false);
+  };
+
+  // Add an image directly via URL
+  const handleAddImageUrl = () => {
+    const url = imageUrlInput.trim();
+    if (!url) return;
+    if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('/')) {
+      setFormError('Please enter a valid web link starting with https://');
+      return;
+    }
+    setFormError('');
+    setForm((prev) => {
+      const existing = prev.images || [];
+      const combined = [...existing, url].slice(0, 8);
+      return {
+        ...prev,
+        images: combined,
+        image: combined[0] || url,
+      };
+    });
+    setImageUrlInput('');
+    setShowUrlInput(false);
+  };
+
+  const handleAddSampleImage = (url: string) => {
+    setFormError('');
+    setForm((prev) => {
+      const existing = prev.images || [];
+      const combined = [...existing, url].slice(0, 8);
+      return {
+        ...prev,
+        images: combined,
+        image: combined[0] || url,
+      };
+    });
   };
 
   const removeImage = (index: number) => {
@@ -143,14 +192,57 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
     });
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const cleanCategory = form.category?.trim();
-    if (cleanCategory) {
-      addCategory(cleanCategory);
+    setFormError('');
+
+    if (!form.name.trim()) {
+      setFormError('Product Name is required.');
+      return;
     }
-    const images = form.images && form.images.length > 0 ? form.images : form.image ? [form.image] : [];
-    onSave({ ...form, category: cleanCategory || form.category, images, image: images[0] || form.image }, initialProduct?.id);
+
+    const cleanCategory = form.category?.trim();
+    if (!cleanCategory) {
+      setFormError('Category is required. Please select or type a category.');
+      return;
+    }
+
+    if (form.price === undefined || form.price === null || isNaN(Number(form.price)) || form.price < 0) {
+      setFormError('Please enter a valid price (e.g. 19.99).');
+      return;
+    }
+
+    const currentImages = form.images && form.images.length > 0
+      ? form.images
+      : form.image ? [form.image] : [];
+
+    if (currentImages.length === 0) {
+      setFormError('Please add at least 1 product image (Upload file or paste image URL).');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      if (cleanCategory) {
+        addCategory(cleanCategory);
+      }
+      await onSave(
+        {
+          ...form,
+          name: form.name.trim(),
+          category: cleanCategory,
+          price: Number(form.price),
+          images: currentImages,
+          image: currentImages[0],
+          description: form.description?.trim() || form.name.trim(),
+        },
+        initialProduct?.id
+      );
+    } catch (err: any) {
+      setFormError(err?.message || 'Failed to save product. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const images = form.images || [];
@@ -167,6 +259,13 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
           {initialProduct ? 'Updating #' + initialProduct.id : 'New Entry'}
         </span>
       </div>
+
+      {formError && (
+        <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-3.5 text-xs font-semibold text-rose-300 flex items-center gap-2">
+          <span>⚠️</span>
+          <span>{formError}</span>
+        </div>
+      )}
 
       {/* Name & Category */}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -198,7 +297,6 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
               </option>
             ))}
           </select>
-          {/* Custom category input when "Other" is selected */}
           {categoryMode === 'custom' && (
             <input
               value={form.category}
@@ -221,8 +319,9 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
             type="number"
             min={0}
             step={0.01}
-            value={form.price}
-            onChange={(e) => handleChange('price', Number(e.target.value))}
+            value={form.price === 0 ? '' : form.price}
+            onChange={(e) => handleChange('price', e.target.value === '' ? 0 : Number(e.target.value))}
+            placeholder="0.00"
             className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 outline-none transition focus:border-brand-500 mt-1.5"
             required
           />
@@ -242,37 +341,66 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
         </label>
       </div>
 
-      {/* Multi-Image Upload */}
+      {/* Multi-Image Upload & URL Input */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-semibold text-slate-300">
             Product Images * <span className="text-slate-500 font-normal">({images.length}/8)</span>
           </p>
-          {images.length < 8 && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-              <button
-                type="button"
-                disabled={isUploading}
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 rounded-full bg-brand-600/20 border border-brand-500/30 px-3.5 py-1.5 text-xs font-semibold text-brand-300 hover:bg-brand-600/30 transition disabled:opacity-50"
-              >
-                {isUploading ? (
-                  <span className="animate-pulse">☁️ Uploading...</span>
-                ) : (
-                  <>📁 Add Images</>
-                )}
-              </button>
-            </>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowUrlInput(!showUrlInput)}
+              className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-white/10 transition"
+            >
+              🔗 {showUrlInput ? 'Hide URL' : 'Paste Image URL'}
+            </button>
+            {images.length < 8 && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 rounded-full bg-brand-600/20 border border-brand-500/30 px-3.5 py-1 text-xs font-semibold text-brand-300 hover:bg-brand-600/30 transition disabled:opacity-50"
+                >
+                  {isUploading ? (
+                    <span className="animate-pulse">☁️ Uploading...</span>
+                  ) : (
+                    <>📁 Upload File</>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
         </div>
+
+        {/* URL Input Bar */}
+        {showUrlInput && (
+          <div className="flex gap-2 rounded-2xl border border-sky-500/30 bg-slate-950/90 p-2">
+            <input
+              type="url"
+              value={imageUrlInput}
+              onChange={(e) => setImageUrlInput(e.target.value)}
+              placeholder="Paste direct image link: https://..."
+              className="flex-1 bg-transparent px-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none"
+            />
+            <button
+              type="button"
+              onClick={handleAddImageUrl}
+              className="rounded-xl bg-sky-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-sky-500 transition shadow"
+            >
+              Add
+            </button>
+          </div>
+        )}
 
         {/* Image Thumbnails Grid */}
         {images.length > 0 ? (
@@ -328,7 +456,6 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
               </div>
             ))}
 
-            {/* Add More Slot */}
             {images.length < 8 && (
               <button
                 type="button"
@@ -341,16 +468,35 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
             )}
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/15 bg-slate-950 py-8 text-center hover:border-brand-500/40 transition disabled:opacity-40"
-          >
-            <span className="text-3xl">🖼️</span>
-            <span className="text-sm font-semibold text-slate-300">Click to upload images</span>
-            <span className="text-xs text-slate-500">JPG, PNG, WEBP supported · Up to 8 images · First image = main</span>
-          </button>
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/15 bg-slate-950 py-7 text-center hover:border-brand-500/40 transition disabled:opacity-40"
+            >
+              <span className="text-3xl">🖼️</span>
+              <span className="text-sm font-semibold text-slate-300">Click to upload product image</span>
+              <span className="text-xs text-slate-500">JPG, PNG, WEBP · Or use &quot;Paste Image URL&quot; above</span>
+            </button>
+
+            {/* Quick Sample Image Selection */}
+            <div className="rounded-xl border border-white/5 bg-slate-950/60 p-2.5">
+              <span className="text-[11px] text-slate-400 block mb-1.5 font-medium">Or pick a quick sample photo:</span>
+              <div className="flex flex-wrap gap-2">
+                {SAMPLE_IMAGES.map((sample) => (
+                  <button
+                    key={sample.label}
+                    type="button"
+                    onClick={() => handleAddSampleImage(sample.url)}
+                    className="rounded-lg border border-white/10 bg-slate-900 px-2.5 py-1 text-xs text-slate-300 hover:border-brand-500/50 hover:text-white transition"
+                  >
+                    + {sample.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
@@ -391,12 +537,20 @@ export function ProductForm({ initialProduct, onSave, onCancel }: ProductFormPro
         </button>
         <button
           type="submit"
-          disabled={isUploading || images.length === 0}
-          className="rounded-2xl bg-brand-600 px-6 py-2.5 text-xs font-bold text-white hover:bg-brand-700 transition shadow-lg shadow-brand-600/30 disabled:opacity-60"
+          disabled={isUploading || isSaving}
+          className="rounded-2xl bg-brand-600 hover:bg-brand-500 px-6 py-2.5 text-xs font-bold text-white transition shadow-lg shadow-brand-600/30 disabled:opacity-60 flex items-center gap-2 cursor-pointer"
         >
-          {initialProduct ? 'Save Changes' : 'Publish Product'}
+          {isSaving ? (
+            <>
+              <span className="animate-spin">⏳</span>
+              <span>{initialProduct ? 'Saving Changes...' : 'Publishing Product...'}</span>
+            </>
+          ) : (
+            <span>{initialProduct ? 'Save Changes' : '+ Publish Product'}</span>
+          )}
         </button>
       </div>
     </form>
   );
 }
+
