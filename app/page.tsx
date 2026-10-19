@@ -332,6 +332,7 @@ export default function HomePage() {
         items={cartItems}
         onClose={() => setCartOpen(false)}
         onQuantityChange={updateQuantity}
+        onRemove={removeItem}
       />
     </div>
   );
